@@ -886,6 +886,12 @@ static double LonToMercatorX(double lon) {
 }
 
 static double LatToMercatorY(double lat) {
+    // Clamp to the Web Mercator latitude limit. Beyond ±85.0511° the
+    // projection diverges (tan→∞ at +90°, log(0)=−∞ at −90°), which would
+    // blow up the resolution/zoom calc and collapse the raster into a single
+    // zoom-0 tile. Matches the clamp already applied in quadbin.hpp's cell math.
+    if (lat > quadbin::MAX_LATITUDE) lat = quadbin::MAX_LATITUDE;
+    if (lat < -quadbin::MAX_LATITUDE) lat = -quadbin::MAX_LATITUDE;
     double lat_rad = lat * quadbin::PI / 180.0;
     return quadbin::EARTH_RADIUS * std::log(std::tan(quadbin::PI / 4.0 + lat_rad / 2.0));
 }
