@@ -253,10 +253,47 @@ When `bands` is used, `N` equals the number of selected bands and the schema is 
 **NetCDF time dimension:** When reading NetCDF files with CF time metadata, the time dimension info
 (`cf:units`, `cf:calendar`) is automatically included in the output metadata JSON.
 
-**Parallelism:** Both the native-zoom and overview-pyramid phases run in parallel. Each thread opens
-its own per-thread GDAL handle and pulls work off a shared atomic queue. Phase 2 (overview tiles)
-publishes a staged result queue when the last worker finishes warping, so partial-chunk emission
-across `Execute` calls is safe.
+**Parallelism — how to actually use all your CPUs:**
+
+`read_raster()` is built to saturate every core, but DuckDB will only let it if you tell DuckDB
+that row order doesn't matter. **Two session settings control this — no `read_raster()` parameter
+does:**
+
+```sql
+SET threads = 8;                      -- how many cores DuckDB may use (defaults to your core count)
+SET preserve_insertion_order = false; -- THIS is what unlocks the parallel scan
+```
+
+Why the second one is mandatory: `read_raster()` reports `MAX_THREADS` to the planner (it wants
+all cores) but does **not** emit rows in a fixed order (no batch-index / ordered-parallelism
+support). With DuckDB's default `preserve_insertion_order = true`, the planner must keep the
+producing order, so it runs the scan on a **single thread** — you see one core at 100% no matter
+how high `threads` is set. Setting `preserve_insertion_order = false` removes that constraint and
+all worker threads light up.
+
+```sql
+-- Multi-core ingest: set both, then COPY. ORDER BY block is fine — the sort is a
+-- separate parallel operator and does NOT re-serialize the scan.
+SET threads = 8;
+SET preserve_insertion_order = false;
+COPY (SELECT * FROM read_raster('big.tif') ORDER BY block)
+TO 'big.parquet' (FORMAT parquet);
+```
+
+Common gotchas:
+- **None of the named parameters turn parallelism on or off.** `approx`, `sparsity_probe`,
+  `sparsity_probe_size`, `bands`, `block_size`, `format` only change *what* is computed or the
+  output layout — never the thread count. If a "naked" call runs on one core and a parameterised
+  call runs on many, the real difference is the session settings around them, not the params.
+- A larger `block_size` produces *fewer, bigger* tiles — i.e. *less* parallel work to spread, not
+  more.
+- Set `RAQUET_DEBUG_TIMING=1` (see below) to print the actual thread count it ran with, so you can
+  confirm the settings took effect.
+
+**Internal model:** both the native-zoom and overview-pyramid phases run in parallel. Each thread
+opens its own per-thread GDAL handle (GDAL is not thread-safe per handle) and pulls work off a
+shared atomic queue. Phase 2 (overview tiles) publishes a staged result queue when the last worker
+finishes warping, so partial-chunk emission across `Execute` calls is safe.
 
 **Debug timing:** set the env var `RAQUET_DEBUG_TIMING=1` (any non-empty value) to emit
 `[raquet-phase] phaseN @ Xs (...)` markers on stderr at every Phase 1 / Phase 2 / Phase 3
@@ -265,7 +302,10 @@ above `ReadRasterGlobalState` (or `CLAUDE.md`) for the full state-machine semant
 
 **Typical workflow:**
 ```sql
--- Convert and write to Parquet (ORDER BY block for optimal spatial queries)
+-- Convert and write to Parquet (ORDER BY block for optimal spatial queries).
+-- Set these two first to convert on all cores (see "Parallelism" above).
+SET threads = 8;
+SET preserve_insertion_order = false;
 COPY (SELECT * FROM read_raster('input.tif') ORDER BY block)
 TO 'output.parquet' (FORMAT parquet);
 

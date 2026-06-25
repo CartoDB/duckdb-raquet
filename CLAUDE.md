@@ -68,6 +68,26 @@ Set `RAQUET_DEBUG_TIMING=1` to emit per-phase wall-time markers to stderr (`[raq
 
 Pipeline per tile: `CreateTileDataset → WarpIntoTile → IsTileEmpty → ReadAndCompressBands → EmitTileRow`
 
+### What actually enables multi-core (the #1 support question)
+
+The C++ side always wants every core: `ReadRasterGlobalState::MaxThreads()` returns `MAX_THREADS`,
+and `ReadRasterCardinality` reports a tile estimate so the planner sizes a parallel pipeline. But
+the table function does **not** implement ordered parallelism (no `get_batch_index`), so DuckDB can
+only run the scan multi-threaded when it's allowed to drop row order. That gate is a **session
+setting, not a `read_raster()` parameter**:
+
+```sql
+SET threads = N;                       -- cores DuckDB may use
+SET preserve_insertion_order = false;  -- without this, the scan runs on ONE thread
+```
+
+With the default `preserve_insertion_order = true`, the planner serializes the scan to preserve
+order → one core at 100% regardless of `threads`. None of the named params (`approx`,
+`sparsity_probe`, `sparsity_probe_size`, `bands`, `block_size`, `format`) affect the thread count —
+they only change *what* is computed or the output shape. A downstream `ORDER BY block` is fine: it's
+a separate parallel sort operator and does not re-serialize the scan. This is the user-facing
+contract documented in `README.md` under "Parallelism".
+
 ## DuckDB API Notes
 
 - `ExtensionUtil` was removed in DuckDB 1.5 — use `loader.RegisterFunction()` directly
