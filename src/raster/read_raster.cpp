@@ -1206,8 +1206,11 @@ static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
             "declare a tile matrix set)", bind_data->tile_matrix_set);
     }
 
-    // Initialize embedded PROJ database and GDAL
+    // Initialize embedded PROJ database (only when built in; without it,
+    // PROJ resolves its database through GDAL's own configuration) and GDAL
+#ifdef RAQUET_HAS_EMBEDDED_PROJ
     raquet::InitEmbeddedProj();
+#endif
     EnsureGDALRegistered();
 
     // Open the raster
