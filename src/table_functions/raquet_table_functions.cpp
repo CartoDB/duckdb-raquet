@@ -46,6 +46,8 @@ static void RaquetParseMetadataFunction(DataChunk &args, ExpressionState &state,
     auto &max_zoom_vec = *struct_entries[6];
     auto &num_bands_vec = *struct_entries[7];
     auto &tile_statistics_vec = *struct_entries[8];      // v0.5.0
+    auto &tile_matrix_set_vec = *struct_entries[9];      // v0.6.0
+    auto &crs_vec = *struct_entries[10];                 // v0.6.0
 
     for (idx_t i = 0; i < args.size(); i++) {
         auto metadata_str = metadata_data[i].GetString();
@@ -67,6 +69,8 @@ static void RaquetParseMetadataFunction(DataChunk &args, ExpressionState &state,
             FlatVector::GetData<int32_t>(max_zoom_vec)[i] = meta.max_zoom;
             FlatVector::GetData<int32_t>(num_bands_vec)[i] = static_cast<int32_t>(meta.bands.size());
             FlatVector::GetData<bool>(tile_statistics_vec)[i] = meta.tile_statistics;
+            FlatVector::GetData<string_t>(tile_matrix_set_vec)[i] = StringVector::AddString(tile_matrix_set_vec, meta.tile_matrix_set);
+            FlatVector::GetData<string_t>(crs_vec)[i] = StringVector::AddString(crs_vec, meta.crs);
         } catch (...) {
             result_mask.SetInvalid(i);
         }
@@ -132,6 +136,8 @@ void RegisterRaquetTableFunctions(ExtensionLoader &loader) {
     meta_struct.push_back(make_pair("max_zoom", LogicalType::INTEGER));
     meta_struct.push_back(make_pair("num_bands", LogicalType::INTEGER));
     meta_struct.push_back(make_pair("tile_statistics", LogicalType::BOOLEAN));  // v0.5.0
+    meta_struct.push_back(make_pair("tile_matrix_set", LogicalType::VARCHAR));  // v0.6.0
+    meta_struct.push_back(make_pair("crs", LogicalType::VARCHAR));             // v0.6.0
 
     ScalarFunction parse_metadata_fn("raquet_parse_metadata",
         {LogicalType::VARCHAR},

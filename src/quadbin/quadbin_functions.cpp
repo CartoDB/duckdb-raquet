@@ -1,5 +1,6 @@
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/string_util.hpp"
 #include "duckdb/common/vector_operations/generic_executor.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
@@ -337,6 +338,22 @@ static void QuadbinToTileFunction(DataChunk &args, ExpressionState &state, Vecto
     result.SetVectorType(VectorType::FLAT_VECTOR);
 }
 
+// Validate a user-supplied tile_matrix_set string and resolve it to a TMS.
+// Unlike quadbin::TileMatrixSet::FromName() (which silently falls back to
+// WebMercatorQuad for unrecognized names — correct when parsing trusted file
+// metadata already written by this extension), user-facing SQL arguments must
+// reject anything else explicitly. Mirrors the validation in
+// ReadRasterBind (src/raster/read_raster.cpp).
+static quadbin::TileMatrixSet ParseTmsArgStrict(const std::string &name) {
+    auto lower = StringUtil::Lower(name);
+    if (lower == "webmercatorquad") {
+        return quadbin::TileMatrixSet{quadbin::TmsId::WebMercatorQuad};
+    } else if (lower == "googlecrs84quad") {
+        return quadbin::TileMatrixSet{quadbin::TmsId::GoogleCRS84Quad};
+    }
+    throw InvalidInputException("tile_matrix_set must be 'WebMercatorQuad' or 'GoogleCRS84Quad'");
+}
+
 // quadbin_from_lonlat(lon, lat, resolution) -> UBIGINT
 static void QuadbinFromLonLatFunction(DataChunk &args, ExpressionState &state, Vector &result) {
     auto &lon_vec = args.data[0];
@@ -348,6 +365,31 @@ static void QuadbinFromLonLatFunction(DataChunk &args, ExpressionState &state, V
         [](double lon, double lat, int32_t resolution) {
             return quadbin::lonlat_to_cell(lon, lat, resolution);
         });
+}
+
+// quadbin_from_lonlat(lon, lat, resolution, tile_matrix_set) -> UBIGINT
+static void QuadbinFromLonLatTmsFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+    args.data[3].Flatten(args.size());
+    auto tms_data = FlatVector::GetData<string_t>(args.data[3]);
+
+    auto &lon_vec = args.data[0];
+    auto &lat_vec = args.data[1];
+    auto &res_vec = args.data[2];
+    lon_vec.Flatten(args.size());
+    lat_vec.Flatten(args.size());
+    res_vec.Flatten(args.size());
+
+    auto lon_data = FlatVector::GetData<double>(lon_vec);
+    auto lat_data = FlatVector::GetData<double>(lat_vec);
+    auto res_data = FlatVector::GetData<int32_t>(res_vec);
+    auto result_data = FlatVector::GetData<uint64_t>(result);
+
+    for (idx_t i = 0; i < args.size(); i++) {
+        auto tms = ParseTmsArgStrict(tms_data[i].GetString());
+        result_data[i] = tms.lonlat_to_cell(lon_data[i], lat_data[i], res_data[i]);
+    }
+
+    result.SetVectorType(VectorType::FLAT_VECTOR);
 }
 
 // quadbin_to_lonlat(cell) -> STRUCT(lon DOUBLE, lat DOUBLE)
@@ -371,6 +413,33 @@ static void QuadbinToLonLatFunction(DataChunk &args, ExpressionState &state, Vec
             quadbin::cell_to_lonlat(cell, lon, lat);
             return lat;
         });
+
+    result.SetVectorType(VectorType::FLAT_VECTOR);
+}
+
+// quadbin_to_lonlat(cell, tile_matrix_set) -> STRUCT(lon DOUBLE, lat DOUBLE)
+static void QuadbinToLonLatTmsFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+    auto &cell_vec = args.data[0];
+    auto &tms_vec = args.data[1];
+    cell_vec.Flatten(args.size());
+    tms_vec.Flatten(args.size());
+
+    auto cell_data = FlatVector::GetData<uint64_t>(cell_vec);
+    auto tms_data = FlatVector::GetData<string_t>(tms_vec);
+
+    auto &struct_entries = StructVector::GetEntries(result);
+    auto &lon_result = *struct_entries[0];
+    auto &lat_result = *struct_entries[1];
+    auto lon_data = FlatVector::GetData<double>(lon_result);
+    auto lat_data = FlatVector::GetData<double>(lat_result);
+
+    for (idx_t i = 0; i < args.size(); i++) {
+        auto tms = ParseTmsArgStrict(tms_data[i].GetString());
+        double lon, lat;
+        tms.cell_to_lonlat(cell_data[i], lon, lat);
+        lon_data[i] = lon;
+        lat_data[i] = lat;
+    }
 
     result.SetVectorType(VectorType::FLAT_VECTOR);
 }
@@ -435,6 +504,38 @@ static void QuadbinPixelXYFunction(DataChunk &args, ExpressionState &state, Vect
 
         int pixel_x, pixel_y, tile_x, tile_y;
         quadbin::lonlat_to_pixel(lon, lat, resolution, tile_size, pixel_x, pixel_y, tile_x, tile_y);
+
+        FlatVector::GetData<int32_t>(px_result)[i] = pixel_x;
+        FlatVector::GetData<int32_t>(py_result)[i] = pixel_y;
+    }
+
+    result.SetVectorType(VectorType::FLAT_VECTOR);
+}
+
+// quadbin_pixel_xy(lon, lat, resolution, tile_size, tile_matrix_set) -> STRUCT(pixel_x, pixel_y)
+static void QuadbinPixelXYTmsFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+    auto &lon_vec = args.data[0];
+    auto &lat_vec = args.data[1];
+    auto &res_vec = args.data[2];
+    auto &size_vec = args.data[3];
+    auto &tms_vec = args.data[4];
+    tms_vec.Flatten(args.size());
+
+    auto tms_data = FlatVector::GetData<string_t>(tms_vec);
+
+    auto &struct_entries = StructVector::GetEntries(result);
+    auto &px_result = *struct_entries[0];
+    auto &py_result = *struct_entries[1];
+
+    for (idx_t i = 0; i < args.size(); i++) {
+        auto lon = FlatVector::GetData<double>(lon_vec)[i];
+        auto lat = FlatVector::GetData<double>(lat_vec)[i];
+        auto resolution = FlatVector::GetData<int32_t>(res_vec)[i];
+        auto tile_size = FlatVector::GetData<int32_t>(size_vec)[i];
+        auto tms = ParseTmsArgStrict(tms_data[i].GetString());
+
+        int pixel_x, pixel_y, tile_x, tile_y;
+        tms.lonlat_to_pixel(lon, lat, resolution, tile_size, pixel_x, pixel_y, tile_x, tile_y);
 
         FlatVector::GetData<int32_t>(px_result)[i] = pixel_x;
         FlatVector::GetData<int32_t>(py_result)[i] = pixel_y;
@@ -940,22 +1041,34 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
     loader.RegisterFunction(to_tile);
 
     // quadbin_from_lonlat(lon, lat, resolution) -> UBIGINT
-    ScalarFunction from_lonlat("quadbin_from_lonlat",
+    // quadbin_from_lonlat(lon, lat, resolution, tile_matrix_set) -> UBIGINT
+    ScalarFunctionSet from_lonlat_set("quadbin_from_lonlat");
+    from_lonlat_set.AddFunction(ScalarFunction(
         {LogicalType::DOUBLE, LogicalType::DOUBLE, LogicalType::INTEGER},
         LogicalType::UBIGINT,
-        QuadbinFromLonLatFunction);
-    loader.RegisterFunction(from_lonlat);
+        QuadbinFromLonLatFunction));
+    from_lonlat_set.AddFunction(ScalarFunction(
+        {LogicalType::DOUBLE, LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::VARCHAR},
+        LogicalType::UBIGINT,
+        QuadbinFromLonLatTmsFunction));
+    loader.RegisterFunction(from_lonlat_set);
 
     // quadbin_to_lonlat(cell) -> STRUCT
+    // quadbin_to_lonlat(cell, tile_matrix_set) -> STRUCT
     child_list_t<LogicalType> lonlat_struct;
     lonlat_struct.push_back(make_pair("lon", LogicalType::DOUBLE));
     lonlat_struct.push_back(make_pair("lat", LogicalType::DOUBLE));
 
-    ScalarFunction to_lonlat("quadbin_to_lonlat",
+    ScalarFunctionSet to_lonlat_set("quadbin_to_lonlat");
+    to_lonlat_set.AddFunction(ScalarFunction(
         {LogicalType::UBIGINT},
         LogicalType::STRUCT(lonlat_struct),
-        QuadbinToLonLatFunction);
-    loader.RegisterFunction(to_lonlat);
+        QuadbinToLonLatFunction));
+    to_lonlat_set.AddFunction(ScalarFunction(
+        {LogicalType::UBIGINT, LogicalType::VARCHAR},
+        LogicalType::STRUCT(lonlat_struct),
+        QuadbinToLonLatTmsFunction));
+    loader.RegisterFunction(to_lonlat_set);
 
     // quadbin_resolution(cell) -> INT
     ScalarFunction resolution("quadbin_resolution",
@@ -978,15 +1091,21 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
     loader.RegisterFunction(to_bbox);
 
     // quadbin_pixel_xy(lon, lat, resolution, tile_size) -> STRUCT(pixel_x, pixel_y)
+    // quadbin_pixel_xy(lon, lat, resolution, tile_size, tile_matrix_set) -> STRUCT(pixel_x, pixel_y)
     child_list_t<LogicalType> pixel_struct;
     pixel_struct.push_back(make_pair("pixel_x", LogicalType::INTEGER));
     pixel_struct.push_back(make_pair("pixel_y", LogicalType::INTEGER));
 
-    ScalarFunction pixel_xy("quadbin_pixel_xy",
+    ScalarFunctionSet pixel_xy_set("quadbin_pixel_xy");
+    pixel_xy_set.AddFunction(ScalarFunction(
         {LogicalType::DOUBLE, LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER},
         LogicalType::STRUCT(pixel_struct),
-        QuadbinPixelXYFunction);
-    loader.RegisterFunction(pixel_xy);
+        QuadbinPixelXYFunction));
+    pixel_xy_set.AddFunction(ScalarFunction(
+        {LogicalType::DOUBLE, LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::VARCHAR},
+        LogicalType::STRUCT(pixel_struct),
+        QuadbinPixelXYTmsFunction));
+    loader.RegisterFunction(pixel_xy_set);
 
     // ========================================================================
     // Spatial Filtering Functions (uses DuckDB 1.5+ native GEOMETRY type)

@@ -297,11 +297,18 @@ inline void cell_siblings(uint64_t cell, uint64_t siblings[4]) {
 // single-root, square-grid, plate-carrée (CRS84) mapping over
 // [-180,180]×[-90,90] — anisotropic pixels, but QUADBIN bit-compatible.
 //
-// Only the producer-side conversions needed by read_raster() are modelled
-// here (lonlat→tile, tile→bbox, world span / max latitude / target SRS).
-// Read-side helpers (lonlat_to_pixel, cell_to_lonlat, …) remain
-// WebMercator-only for now; teaching them about the TMS is consumer-side work.
+// Read-side conversions (lonlat_to_cell, cell_to_lonlat, lonlat_to_pixel) are
+// modelled below too, so ST_RasterAt / read_raquet_at / ST_RasterValue /
+// quadbin_from_lonlat can resolve a point against whichever TMS the file was
+// actually written with, instead of assuming WebMercatorQuad.
 // ─────────────────────────────────────────────
+
+// Forward declaration: lonlat_to_pixel is defined further down in this file
+// (WebMercatorQuad-only, pre-dates TileMatrixSet); TileMatrixSet::lonlat_to_pixel
+// delegates to it for the WebMercatorQuad case, so it must be visible here.
+inline void lonlat_to_pixel(double lon, double lat, int z, int tile_size,
+                             int &pixel_x, int &pixel_y, int &tile_x, int &tile_y);
+
 enum class TmsId { WebMercatorQuad, GoogleCRS84Quad };
 
 struct TileMatrixSet {
@@ -384,6 +391,79 @@ struct TileMatrixSet {
         }
         // CRS84: the projected bbox is already in degrees.
         tile_to_bbox_projected(x, y, z, min_lon, min_lat, max_lon, max_lat);
+    }
+
+    // ─────────────────────────────────────────────
+    // Read-side conversions (point lookups). Added to close the gap left by
+    // the write-side-only TMS support above: ST_RasterAt / read_raquet_at /
+    // ST_RasterValue / quadbin_from_lonlat resolve a lon/lat to a cell or a
+    // pixel, and must do so using the same TMS the file was written with —
+    // otherwise a GoogleCRS84Quad file is silently misread as WebMercatorQuad.
+    // Same shape as the write-side methods: WebMercatorQuad always delegates
+    // to the pre-existing free functions (byte-identical), GoogleCRS84Quad
+    // gets its own plate-carrée math.
+    // ─────────────────────────────────────────────
+
+    // Convert tile coordinates to lon/lat (center of tile).
+    void tile_to_lonlat(int x, int y, int z, double &lon, double &lat) const {
+        if (id == TmsId::WebMercatorQuad) {
+            quadbin::tile_to_lonlat(x, y, z, lon, lat);
+            return;
+        }
+        double n = std::pow(2.0, z);
+        lon = (x + 0.5) / n * 360.0 - 180.0;
+        lat = 90.0 - (y + 0.5) / n * 180.0;
+    }
+
+    // Convert lon/lat to a QUADBIN cell at the given resolution.
+    uint64_t lonlat_to_cell(double lon, double lat, int z) const {
+        int x, y;
+        lonlat_to_tile(lon, lat, z, x, y);
+        return quadbin::tile_to_cell(x, y, z);  // projection-agnostic
+    }
+
+    // Convert a QUADBIN cell to lon/lat (center of cell).
+    void cell_to_lonlat(uint64_t cell, double &lon, double &lat) const {
+        int x, y, z;
+        quadbin::cell_to_tile(cell, x, y, z);  // projection-agnostic
+        tile_to_lonlat(x, y, z, lon, lat);
+    }
+
+    // Calculate pixel coordinates within a tile for a given lon/lat.
+    void lonlat_to_pixel(double lon, double lat, int z, int tile_size,
+                          int &pixel_x, int &pixel_y, int &tile_x, int &tile_y) const {
+        if (id == TmsId::WebMercatorQuad) {
+            quadbin::lonlat_to_pixel(lon, lat, z, tile_size, pixel_x, pixel_y, tile_x, tile_y);
+            return;
+        }
+        double lat_c = lat;
+        double ml = max_latitude();
+        if (lat_c > ml) lat_c = ml;
+        if (lat_c < -ml) lat_c = -ml;
+
+        double n = std::pow(2.0, z);
+        double tile_x_frac = (lon + 180.0) / 360.0 * n;
+        double tile_y_frac = (90.0 - lat_c) / 180.0 * n;
+
+        tile_x = static_cast<int>(std::floor(tile_x_frac));
+        tile_y = static_cast<int>(std::floor(tile_y_frac));
+
+        // Clamp tile coords to the valid grid (same as lonlat_to_tile above):
+        // at the antimeridian (lon=180) or a pole (lat=+/-90) the fractional
+        // position lands exactly on n, one past the last valid tile index.
+        int max_coord = static_cast<int>(n) - 1;
+        if (tile_x < 0) tile_x = 0;
+        if (tile_x > max_coord) tile_x = max_coord;
+        if (tile_y < 0) tile_y = 0;
+        if (tile_y > max_coord) tile_y = max_coord;
+
+        pixel_x = static_cast<int>((tile_x_frac - tile_x) * tile_size);
+        pixel_y = static_cast<int>((tile_y_frac - tile_y) * tile_size);
+
+        if (pixel_x >= tile_size) pixel_x = tile_size - 1;
+        if (pixel_y >= tile_size) pixel_y = tile_size - 1;
+        if (pixel_x < 0) pixel_x = 0;
+        if (pixel_y < 0) pixel_y = 0;
     }
 };
 

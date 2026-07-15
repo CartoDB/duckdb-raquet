@@ -97,3 +97,169 @@ FROM 'duckdb_unittest_tempdir/tms_crs84.parquet'
 WHERE block = 0
 ----
 GoogleCRS84Quad	OGC:CRS84
+
+# ============================================================================
+# Read-path TMS awareness.
+#
+# PR #13 only made the *write* path (read_raster()) aware of tile_matrix_set;
+# every read-side point-lookup (quadbin_from_lonlat, ST_RasterValue,
+# ST_RasterAt, read_raquet_at) still hardcoded Web Mercator math, so a
+# GoogleCRS84Quad file was silently misread by this repo's own SQL surface.
+# These cases must fail until that read-side gap is fixed (quadbin.hpp TMS
+# methods + quadbin_from_lonlat/quadbin_to_lonlat/quadbin_pixel_xy TMS
+# overloads + ST_RasterValue + the ST_RasterAt/read_raquet_at macros).
+# The fixture reused below (tms_crs84.parquet) is the GoogleCRS84Quad file
+# created earlier in this test file; its center (13.008, 52.492) is well
+# inside test_palette.tif's WGS84 bounds ([13.0,13.016] x [52.484,52.5]).
+# ============================================================================
+
+# ---------- quadbin_from_lonlat: GoogleCRS84Quad overload differs from the
+# WebMercatorQuad default for a non-equatorial point --------------------------
+query I
+SELECT quadbin_from_lonlat(13.008, 52.492, 10, 'GoogleCRS84Quad') !=
+       quadbin_from_lonlat(13.008, 52.492, 10);
+----
+true
+
+# WebMercatorQuad passed explicitly must equal the (unchanged) default overload.
+query I
+SELECT quadbin_from_lonlat(13.008, 52.492, 10, 'WebMercatorQuad') =
+       quadbin_from_lonlat(13.008, 52.492, 10);
+----
+true
+
+# ---------- unknown tile_matrix_set is rejected, not silently defaulted -----
+statement error
+SELECT quadbin_from_lonlat(13.008, 52.492, 10, 'BogusQuad')
+----
+tile_matrix_set must be
+
+# ---------- quadbin_to_lonlat round-trips a GoogleCRS84Quad cell ------------
+query II
+SELECT abs((quadbin_to_lonlat(quadbin_from_lonlat(13.008, 52.492, 10, 'GoogleCRS84Quad'), 'GoogleCRS84Quad')).lon - 13.008) < 0.5,
+       abs((quadbin_to_lonlat(quadbin_from_lonlat(13.008, 52.492, 10, 'GoogleCRS84Quad'), 'GoogleCRS84Quad')).lat - 52.492) < 0.5
+----
+true	true
+
+# ---------- quadbin_pixel_xy: GoogleCRS84Quad overload differs from default -
+query I
+SELECT quadbin_pixel_xy(13.008, 52.492, 10, 256, 'GoogleCRS84Quad') !=
+       quadbin_pixel_xy(13.008, 52.492, 10, 256);
+----
+true
+
+# ---------- ST_RasterValue decodes the pixel from the correct GoogleCRS84Quad
+# tile. Rather than assert a specific IS NOT NULL outcome (fragile: nearest-
+# neighbor warp resampling from this coarse 16x16 fixture up to a zoom-10 grid
+# can legitimately land a point on a NODATA pixel even when the tile match
+# itself is correct — verified independently with gdallocationinfo), this
+# compares ST_RasterValue's result against a direct raquet_pixel decode at the
+# independently-computed (correct) block/pixel: it must decode the exact same
+# location, whether that location happens to hold NODATA or a real value.
+# Before the fix (ST_RasterValue hardcoded to Mercator math), this decodes a
+# different pixel from a different tile and the two sides disagree.
+query I
+WITH correct AS (
+    SELECT quadbin_from_lonlat(13.005, 52.495, 10, 'GoogleCRS84Quad') AS blk,
+           (quadbin_pixel_xy(13.005, 52.495, 10, 256, 'GoogleCRS84Quad')).pixel_x AS px,
+           (quadbin_pixel_xy(13.005, 52.495, 10, 256, 'GoogleCRS84Quad')).pixel_y AS py
+)
+SELECT ST_RasterValue(t.block, t.band_1, ST_Point(13.005, 52.495),
+                       (SELECT metadata FROM 'duckdb_unittest_tempdir/tms_crs84.parquet' WHERE block = 0))
+       IS NOT DISTINCT FROM
+       NULLIF(raquet_pixel(t.band_1, 'uint8', correct.px, correct.py, 256, 'gzip'), 0.0)
+FROM 'duckdb_unittest_tempdir/tms_crs84.parquet' t, correct
+WHERE t.block = correct.blk
+----
+true
+
+# ---------- read_raquet_at resolves a GoogleCRS84Quad file correctly -------
+query I
+SELECT count(*) FROM read_raquet_at('duckdb_unittest_tempdir/tms_crs84.parquet', 13.008, 52.492)
+----
+1
+
+# The returned block must match the TMS-aware quadbin_from_lonlat computed
+# against the file's own declared tile_matrix_set.
+query I
+SELECT block = quadbin_from_lonlat(13.008, 52.492,
+                   (SELECT (raquet_parse_metadata(metadata)).max_zoom
+                    FROM 'duckdb_unittest_tempdir/tms_crs84.parquet' WHERE block = 0),
+                   'GoogleCRS84Quad')
+FROM read_raquet_at('duckdb_unittest_tempdir/tms_crs84.parquet', 13.008, 52.492)
+----
+true
+
+# ---------- ST_RasterAt resolves a GoogleCRS84Quad table correctly ---------
+statement ok
+CREATE TABLE tms_crs84_tbl AS SELECT * FROM 'duckdb_unittest_tempdir/tms_crs84.parquet';
+
+query I
+SELECT count(*) FROM ST_RasterAt('tms_crs84_tbl', 13.008, 52.492)
+----
+1
+
+statement ok
+DROP TABLE tms_crs84_tbl;
+
+# ---------- raquet_parse_metadata exposes tile_matrix_set / crs ------------
+query II
+SELECT (raquet_parse_metadata(metadata)).tile_matrix_set,
+       (raquet_parse_metadata(metadata)).crs
+FROM 'duckdb_unittest_tempdir/tms_crs84.parquet'
+WHERE block = 0
+----
+GoogleCRS84Quad	OGC:CRS84
+
+# ============================================================================
+# Antimeridian / pole edge cases for GoogleCRS84Quad.
+#
+# Regression for a bug found in review: TileMatrixSet::lonlat_to_pixel didn't
+# clamp tile_x/tile_y to [0, n-1] the way lonlat_to_tile already did. At
+# lon=180 (antimeridian) or lat=-90 (south pole), the fractional tile position
+# lands exactly on n — one past the last valid tile index — so the internal
+# tile-match check in ST_RasterValue (calc_tile_x/calc_tile_y vs the block's
+# own tile x/y) failed for a legitimate edge point and returned NULL instead
+# of decoding the pixel. Uses a single hand-built zoom-0 tile (the whole
+# world in one tile under GoogleCRS84Quad) so the only tile that could ever
+# match is (0,0,0); a NULL result below means the point was resolved to an
+# out-of-range tile instead.
+# ============================================================================
+
+statement ok
+CREATE TABLE tms_crs84_edge AS
+SELECT * FROM (VALUES
+    (0::UBIGINT, NULL::BLOB,
+     '{"file_format":"raquet","version":"0.6.0","compression":"none",
+       "tile_matrix_set":"GoogleCRS84Quad","crs":"OGC:CRS84",
+       "tiling":{"scheme":"quadbin","min_zoom":0,"max_zoom":0,"block_width":2,"block_height":2},
+       "bands":[{"name":"band_1","type":"uint8"}]}'::VARCHAR),
+    (quadbin_from_tile(0, 0, 0), '\x0A\x14\x1E\x28'::BLOB, NULL::VARCHAR)
+) AS t(block, band_1, metadata);
+
+# lon=180.0 exactly (antimeridian): x-axis edge.
+query I
+SELECT ST_RasterValue(block, band_1, ST_Point(180.0, 0.0),
+       (SELECT metadata FROM tms_crs84_edge WHERE block = 0)) IS NOT NULL
+FROM tms_crs84_edge WHERE block != 0
+----
+true
+
+# lat=-90.0 exactly (south pole): y-axis edge.
+query I
+SELECT ST_RasterValue(block, band_1, ST_Point(0.0, -90.0),
+       (SELECT metadata FROM tms_crs84_edge WHERE block = 0)) IS NOT NULL
+FROM tms_crs84_edge WHERE block != 0
+----
+true
+
+# Both edges at once (corner: antimeridian + south pole).
+query I
+SELECT ST_RasterValue(block, band_1, ST_Point(180.0, -90.0),
+       (SELECT metadata FROM tms_crs84_edge WHERE block = 0)) IS NOT NULL
+FROM tms_crs84_edge WHERE block != 0
+----
+true
+
+statement ok
+DROP TABLE tms_crs84_edge;

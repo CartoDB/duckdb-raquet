@@ -167,12 +167,18 @@ static const DefaultTableMacro RAQUET_TABLE_AT_MACROS[] = {
             FROM src
             WHERE block = 0
             LIMIT 1
+        ),
+        table_tms AS (
+            SELECT (raquet_parse_metadata(metadata)).tile_matrix_set AS tms
+            FROM src
+            WHERE block = 0
+            LIMIT 1
         )
         SELECT * REPLACE (
             (SELECT metadata FROM src WHERE block = 0 LIMIT 1) AS metadata
         )
         FROM src
-        WHERE block::UBIGINT = quadbin_from_lonlat(ST_X(point), ST_Y(point), (SELECT res FROM table_resolution))
+        WHERE block::UBIGINT = quadbin_from_lonlat(ST_X(point), ST_Y(point), (SELECT res FROM table_resolution), (SELECT tms FROM table_tms))
      )"},
 
     // 3-arg: Point query with lon/lat and auto-detected max resolution
@@ -184,23 +190,35 @@ static const DefaultTableMacro RAQUET_TABLE_AT_MACROS[] = {
             FROM src
             WHERE block = 0
             LIMIT 1
+        ),
+        table_tms AS (
+            SELECT (raquet_parse_metadata(metadata)).tile_matrix_set AS tms
+            FROM src
+            WHERE block = 0
+            LIMIT 1
         )
         SELECT * REPLACE (
             (SELECT metadata FROM src WHERE block = 0 LIMIT 1) AS metadata
         )
         FROM src
-        WHERE block::UBIGINT = quadbin_from_lonlat(lon, lat, (SELECT res FROM table_resolution))
+        WHERE block::UBIGINT = quadbin_from_lonlat(lon, lat, (SELECT res FROM table_resolution), (SELECT tms FROM table_tms))
      )"},
 
     // 4-arg: Point query with lon/lat and explicit resolution
     {DEFAULT_SCHEMA, "ST_RasterAt", {"tbl", "lon", "lat", "resolution", nullptr}, {{nullptr, nullptr}},
      R"(
-        WITH src AS (SELECT * FROM query_table(tbl))
+        WITH src AS (SELECT * FROM query_table(tbl)),
+        table_tms AS (
+            SELECT (raquet_parse_metadata(metadata)).tile_matrix_set AS tms
+            FROM src
+            WHERE block = 0
+            LIMIT 1
+        )
         SELECT * REPLACE (
             (SELECT metadata FROM src WHERE block = 0 LIMIT 1) AS metadata
         )
         FROM src
-        WHERE block::UBIGINT = quadbin_from_lonlat(lon, lat, resolution)
+        WHERE block::UBIGINT = quadbin_from_lonlat(lon, lat, resolution, (SELECT tms FROM table_tms))
      )"},
 
     // Sentinel
@@ -221,12 +239,18 @@ static const DefaultTableMacro RAQUET_AT_TABLE_MACROS[] = {
             FROM read_parquet(file)
             WHERE block = 0
             LIMIT 1
+        ),
+        file_tms AS (
+            SELECT (raquet_parse_metadata(metadata)).tile_matrix_set AS tms
+            FROM read_parquet(file)
+            WHERE block = 0
+            LIMIT 1
         )
         SELECT * REPLACE (
             (SELECT metadata FROM read_parquet(file) WHERE block = 0 LIMIT 1) AS metadata
         )
         FROM read_parquet(file)
-        WHERE block = quadbin_from_lonlat(ST_X(point), ST_Y(point), (SELECT res FROM file_resolution))
+        WHERE block = quadbin_from_lonlat(ST_X(point), ST_Y(point), (SELECT res FROM file_resolution), (SELECT tms FROM file_tms))
      )"},
 
     // 3-arg: Point query with lon/lat and auto-detected max resolution
@@ -238,23 +262,35 @@ static const DefaultTableMacro RAQUET_AT_TABLE_MACROS[] = {
             FROM read_parquet(file)
             WHERE block = 0
             LIMIT 1
+        ),
+        file_tms AS (
+            SELECT (raquet_parse_metadata(metadata)).tile_matrix_set AS tms
+            FROM read_parquet(file)
+            WHERE block = 0
+            LIMIT 1
         )
         SELECT * REPLACE (
             (SELECT metadata FROM read_parquet(file) WHERE block = 0 LIMIT 1) AS metadata
         )
         FROM read_parquet(file)
-        WHERE block = quadbin_from_lonlat(lon, lat, (SELECT res FROM file_resolution))
+        WHERE block = quadbin_from_lonlat(lon, lat, (SELECT res FROM file_resolution), (SELECT tms FROM file_tms))
      )"},
 
     // 4-arg: Point query with lon/lat and explicit resolution
     // Usage: SELECT ... FROM read_raquet_at('file.parquet', lon, lat, 13)
     {DEFAULT_SCHEMA, "read_raquet_at", {"file", "lon", "lat", "resolution", nullptr}, {{nullptr, nullptr}},
      R"(
+        WITH file_tms AS (
+            SELECT (raquet_parse_metadata(metadata)).tile_matrix_set AS tms
+            FROM read_parquet(file)
+            WHERE block = 0
+            LIMIT 1
+        )
         SELECT * REPLACE (
             (SELECT metadata FROM read_parquet(file) WHERE block = 0 LIMIT 1) AS metadata
         )
         FROM read_parquet(file)
-        WHERE block = quadbin_from_lonlat(lon, lat, resolution)
+        WHERE block = quadbin_from_lonlat(lon, lat, resolution, (SELECT tms FROM file_tms))
      )"},
 
     // Sentinel

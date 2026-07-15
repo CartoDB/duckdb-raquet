@@ -341,7 +341,8 @@ static void RaquetPixelWithMetadataAndBandFunction(DataChunk &args, ExpressionSt
 //
 // Semantics:
 //   - Input geometry must be a POINT in EPSG:4326 (WGS84 lon/lat)
-//   - Internally transforms to EPSG:3857 for pixel lookup (rasters are WebMercator)
+//   - Internally resolves the pixel via the block's declared tile_matrix_set
+//     (WebMercatorQuad by default, or GoogleCRS84Quad — see quadbin::TileMatrixSet)
 //   - Returns NULL if:
 //     * Point falls outside the block's spatial extent
 //     * Sampled pixel equals the band's NODATA value
@@ -400,7 +401,8 @@ static void STRasterValueWithGeometryFunction(DataChunk &args, ExpressionState &
             quadbin::cell_to_tile(block, tile_x, tile_y, z);
 
             int pixel_x, pixel_y, calc_tile_x, calc_tile_y;
-            quadbin::lonlat_to_pixel(lon, lat, resolution, tile_size, pixel_x, pixel_y, calc_tile_x, calc_tile_y);
+            auto tms = quadbin::TileMatrixSet::FromName(meta.tile_matrix_set);
+            tms.lonlat_to_pixel(lon, lat, resolution, tile_size, pixel_x, pixel_y, calc_tile_x, calc_tile_y);
 
             // Return NULL if point falls outside this block
             if (calc_tile_x != tile_x || calc_tile_y != tile_y) {
@@ -495,7 +497,8 @@ static void STRasterValueWithGeometryAndBandNameFunction(DataChunk &args, Expres
             quadbin::cell_to_tile(block, tile_x, tile_y, z);
 
             int pixel_x, pixel_y, calc_tile_x, calc_tile_y;
-            quadbin::lonlat_to_pixel(lon, lat, resolution, tile_size, pixel_x, pixel_y, calc_tile_x, calc_tile_y);
+            auto tms = quadbin::TileMatrixSet::FromName(meta.tile_matrix_set);
+            tms.lonlat_to_pixel(lon, lat, resolution, tile_size, pixel_x, pixel_y, calc_tile_x, calc_tile_y);
 
             // Return NULL if point falls outside this block
             if (calc_tile_x != tile_x || calc_tile_y != tile_y) {
