@@ -15,7 +15,7 @@ extension:
     - cayetanobv
 
 repo:
-  github: jatorre/duckdb-raquet
+  github: CartoDB/duckdb-raquet
   ref: e077a7c36f4527949cd5e36719cf4c81289d9d4b
 
 docs:
@@ -54,5 +54,5 @@ docs:
 
     **Links:**
     - [Raquet Specification](https://raquet.io)
-    - [Documentation](https://github.com/jatorre/duckdb-raquet#readme)
-    - [Performance Benchmarks](https://github.com/jatorre/duckdb-raquet/blob/main/docs/PERFORMANCE_COMPARISON.md)
+    - [Documentation](https://github.com/CartoDB/duckdb-raquet#readme)
+    - [Performance Benchmarks](https://github.com/CartoDB/duckdb-raquet/blob/main/docs/PERFORMANCE_COMPARISON.md)
