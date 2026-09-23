@@ -17,6 +17,7 @@
 #include <gdal.h>
 #include <gdal_alg.h>
 #include <gdalwarper.h>
+#include <limits>
 #include <gdal_utils.h>
 #include <ogr_srs_api.h>
 #include <cpl_conv.h>
@@ -1239,6 +1240,15 @@ static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
         GDALRasterBandH band = GDALGetRasterBand(ds, b);
         int has_nd = 0;
         double nd = GDALGetRasterNoDataValue(band, &has_nd);
+        // Floating point bands without a declared nodata use NaN: the tile
+        // area outside the source footprint is padded with nodata instead of
+        // 0, which readers would otherwise count as valid pixels (and which
+        // made every edge block look non-empty). Integer bands have no spare
+        // value to use and keep the previous behavior.
+        if (!has_nd && (bind_data->gdal_dtype == GDT_Float32 || bind_data->gdal_dtype == GDT_Float64)) {
+            nd = std::numeric_limits<double>::quiet_NaN();
+            has_nd = 1;
+        }
         bind_data->band_nodatas.push_back(has_nd ? nd : 0);
         bind_data->band_has_nodata.push_back(has_nd != 0);
 

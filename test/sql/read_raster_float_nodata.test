@@ -1,0 +1,36 @@
+# name: test/sql/read_raster_float_nodata.test
+# description: Floating point rasters without a declared nodata use NaN, so the
+#              tile area outside the source footprint is nodata, not 0.
+# group: [raquet]
+
+require raquet
+
+# Gated like the other read_raster tests (see read_raster_params.test)
+require json
+
+# test/data/float_no_nodata.tif: 64x64 float32, some NaN pixels, no nodata
+
+# The band declares NaN nodata in both metadata formats
+query I
+SELECT metadata LIKE '%"nodata":"NaN"%'
+FROM read_raster('test/data/float_no_nodata.tif', format='v0.5.0')
+WHERE block = 0
+----
+true
+
+query I
+SELECT metadata LIKE '%"nodata":"NaN"%'
+FROM read_raster('test/data/float_no_nodata.tif', format='v0')
+WHERE block = 0
+----
+true
+
+# Only the pixels inside the source footprint are valid: the 256x256 block is
+# padded with NaN (it was padded with 0, and all 65536 pixels counted as valid)
+query I
+WITH r AS (SELECT * FROM read_raster('test/data/float_no_nodata.tif', format='v0.5.0'))
+SELECT SUM((ST_RasterSummaryStats(band_1, (SELECT metadata FROM r WHERE block = 0))).count)
+FROM r
+WHERE block != 0
+----
+2913
