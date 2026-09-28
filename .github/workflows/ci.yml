@@ -41,9 +41,9 @@ jobs:
         # so `git describe --tags --long` inside duckdb/ fails and DuckDB's
         # CMakeLists.txt falls back to embedding 'v0.0.1' as the binary's
         # version. INSTALL <ext> then 404s against extensions.duckdb.org/v0.0.1/...
-        # Set OVERRIDE_GIT_DESCRIBE explicitly. Update the v1.5.2 below when
+        # Set OVERRIDE_GIT_DESCRIBE explicitly. Update the v1.5.5 below when
         # bumping the duckdb submodule.
-        export OVERRIDE_GIT_DESCRIBE="v1.5.2-0-g$(cd duckdb && git rev-parse --short=10 HEAD)"
+        export OVERRIDE_GIT_DESCRIBE="v1.5.5-0-g$(cd duckdb && git rev-parse --short=10 HEAD)"
         echo "OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE"
         make release
 
@@ -135,9 +135,9 @@ jobs:
         # so `git describe --tags --long` inside duckdb/ fails and DuckDB's
         # CMakeLists.txt falls back to embedding 'v0.0.1' as the binary's
         # version. INSTALL <ext> then 404s against extensions.duckdb.org/v0.0.1/...
-        # Set OVERRIDE_GIT_DESCRIBE explicitly. Update the v1.5.2 below when
+        # Set OVERRIDE_GIT_DESCRIBE explicitly. Update the v1.5.5 below when
         # bumping the duckdb submodule.
-        export OVERRIDE_GIT_DESCRIBE="v1.5.2-0-g$(cd duckdb && git rev-parse --short=10 HEAD)"
+        export OVERRIDE_GIT_DESCRIBE="v1.5.5-0-g$(cd duckdb && git rev-parse --short=10 HEAD)"
         echo "OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE"
         make release
 
