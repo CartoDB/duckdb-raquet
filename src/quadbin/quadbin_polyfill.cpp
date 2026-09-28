@@ -3,6 +3,7 @@
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "quadbin.hpp"
+#include "vector_args.hpp"
 #include <vector>
 #include <cstring>
 #include <cmath>
@@ -394,7 +395,6 @@ static void QuadbinPolyfillFunction(DataChunk &args, ExpressionState &state, Vec
 
     auto geom_data = FlatVector::GetData<string_t>(args.data[0]);
     auto res_data = FlatVector::GetData<int32_t>(args.data[1]);
-    auto &geom_validity = FlatVector::Validity(args.data[0]);
 
     auto &list_entries = ListVector::GetEntry(result);
     auto list_data = FlatVector::GetData<list_entry_t>(result);
@@ -402,7 +402,7 @@ static void QuadbinPolyfillFunction(DataChunk &args, ExpressionState &state, Vec
 
     idx_t total_cells = 0;
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!geom_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             result_validity.SetInvalid(i);
             list_data[i].offset = total_cells;
             list_data[i].length = 0;
@@ -440,7 +440,6 @@ static void QuadbinPolyfillModeFunction(DataChunk &args, ExpressionState &state,
     auto geom_data = FlatVector::GetData<string_t>(args.data[0]);
     auto res_data = FlatVector::GetData<int32_t>(args.data[1]);
     auto mode_data = FlatVector::GetData<string_t>(args.data[2]);
-    auto &geom_validity = FlatVector::Validity(args.data[0]);
 
     auto &list_entries = ListVector::GetEntry(result);
     auto list_data = FlatVector::GetData<list_entry_t>(result);
@@ -448,7 +447,7 @@ static void QuadbinPolyfillModeFunction(DataChunk &args, ExpressionState &state,
 
     idx_t total_cells = 0;
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!geom_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             result_validity.SetInvalid(i);
             list_data[i].offset = total_cells;
             list_data[i].length = 0;

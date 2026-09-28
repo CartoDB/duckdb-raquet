@@ -5,6 +5,7 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "raquet_metadata.hpp"
+#include "vector_args.hpp"
 
 namespace duckdb {
 
@@ -48,6 +49,10 @@ static void RaquetParseMetadataFunction(DataChunk &args, ExpressionState &state,
     auto &tile_statistics_vec = *struct_entries[8];      // v0.5.0
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            result_mask.SetInvalid(i);
+            continue;
+        }
         auto metadata_str = metadata_data[i].GetString();
 
         if (metadata_str.empty()) {
@@ -87,6 +92,10 @@ static void STBandFunction(DataChunk &args, ExpressionState &state, Vector &resu
     auto &result_mask = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            result_mask.SetInvalid(i);
+            continue;
+        }
         auto metadata_str = metadata_data[i].GetString();
         auto band_name = band_name_data[i].GetString();
 

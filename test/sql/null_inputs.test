@@ -50,3 +50,42 @@ SELECT raquet_pixel(NULL::BLOB, 'uint8', 0, 0, 4, 'none'),
        raquet_pixel('\x01\x02\x03\x04'::BLOB, 'uint8', 0, 0, 4, NULL);
 ----
 NULL	NULL	NULL	NULL
+
+# NULLs from a column, so they reach the function instead of being constant-folded. Every
+# argument other than an optional nodata gives NULL; a NULL nodata means "no nodata".
+statement ok
+CREATE TABLE n AS SELECT * FROM (VALUES
+    ('\x03\x06\x09\x0C'::BLOB, '{"compression":"none","tiling":{"block_width":2,"block_height":2},"bands":[{"name":"band_a","type":"uint8"},{"name":"band_b","type":"uint8"}]}', 'band_a', 5000000000000000000::UBIGINT, 1.0::DOUBLE),
+    (NULL, NULL, NULL, NULL, NULL)
+) t(b, meta, name, cell, x);
+
+query IIIIIIIII
+SELECT ST_BandMath(b, b, 'add', meta) IS NULL, ST_NormalizedDifference(b, b, meta) IS NULL,
+       ST_RasterSummaryStats(b, meta) IS NULL, quadbin_to_bbox(cell) IS NULL, ST_Point(x, x) IS NULL,
+       ST_X(ST_Point(x, x)) IS NULL, ST_Band(meta, name) IS NULL, raquet_parse_metadata(meta) IS NULL,
+       ST_Intersects(cell, ST_Point(x, x)) IS NULL
+FROM n ORDER BY b NULLS LAST;
+----
+false	false	false	false	false	false	false	false	false
+true	true	true	true	true	true	true	true	true
+
+# band present, metadata NULL: must not parse the uninitialized metadata slot
+query II
+SELECT ST_BandMath(t.b, t.b, 'add', n.meta) IS NULL, ST_RasterSummaryStats(t.b, n.meta) IS NULL
+FROM n, (SELECT b FROM n WHERE b IS NOT NULL) t ORDER BY n.meta NULLS LAST;
+----
+false	false
+true	true
+
+query II
+SELECT x, (ST_RasterSummaryStats('\x03\x06\x09\x0C'::BLOB, '{"compression":"none","tiling":{"block_width":2,"block_height":2},"bands":[{"name":"band_a","type":"uint8"}]}', x * 3)).count
+FROM n ORDER BY x NULLS LAST;
+----
+1.0	3
+NULL	4
+
+# truncated gzip is an error, not an unbounded allocation
+statement error
+SELECT raquet_pixel(band_1[1:60], 'uint8', 0, 0, 256, 'gzip') FROM 'test/data/raquet_test.parquet' WHERE block != 0 LIMIT 1;
+----
+truncated or corrupt gzip data

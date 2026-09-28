@@ -4,6 +4,7 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "band_decoder.hpp"
 #include "raquet_metadata.hpp"
+#include "vector_args.hpp"
 #include <cmath>
 #include <limits>
 
@@ -45,8 +46,6 @@ static void STNormalizedDifferenceFunction(DataChunk &args, ExpressionState &sta
     auto band2_data = FlatVector::GetData<string_t>(args.data[1]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[2]);
 
-    auto &band1_validity = FlatVector::Validity(args.data[0]);
-    auto &band2_validity = FlatVector::Validity(args.data[1]);
 
     auto list_data = ListVector::GetData(result);
     auto &list_child = ListVector::GetEntry(result);
@@ -55,7 +54,7 @@ static void STNormalizedDifferenceFunction(DataChunk &args, ExpressionState &sta
     idx_t total_list_size = 0;
 
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!band1_validity.RowIsValid(i) || !band2_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
             FlatVector::Validity(result).SetInvalid(i);
@@ -143,8 +142,6 @@ static void STNormalizedDifferenceNodataFunction(DataChunk &args, ExpressionStat
     auto metadata_data = FlatVector::GetData<string_t>(args.data[2]);
     auto nodata_data = FlatVector::GetData<double>(args.data[3]);
 
-    auto &band1_validity = FlatVector::Validity(args.data[0]);
-    auto &band2_validity = FlatVector::Validity(args.data[1]);
 
     auto list_data = ListVector::GetData(result);
     auto &list_child = ListVector::GetEntry(result);
@@ -153,7 +150,7 @@ static void STNormalizedDifferenceNodataFunction(DataChunk &args, ExpressionStat
     idx_t total_list_size = 0;
 
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!band1_validity.RowIsValid(i) || !band2_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
             FlatVector::Validity(result).SetInvalid(i);
@@ -244,8 +241,6 @@ static void STBandMathFunction(DataChunk &args, ExpressionState &state, Vector &
     auto op_data = FlatVector::GetData<string_t>(args.data[2]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[3]);
 
-    auto &band1_validity = FlatVector::Validity(args.data[0]);
-    auto &band2_validity = FlatVector::Validity(args.data[1]);
 
     auto list_data = ListVector::GetData(result);
     auto &list_child = ListVector::GetEntry(result);
@@ -254,7 +249,7 @@ static void STBandMathFunction(DataChunk &args, ExpressionState &state, Vector &
     idx_t total_list_size = 0;
 
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!band1_validity.RowIsValid(i) || !band2_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
             FlatVector::Validity(result).SetInvalid(i);
@@ -363,8 +358,6 @@ static void STNormalizedDifferenceStatsFunction(DataChunk &args, ExpressionState
     auto band2_data = FlatVector::GetData<string_t>(args.data[1]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[2]);
 
-    auto &band1_validity = FlatVector::Validity(args.data[0]);
-    auto &band2_validity = FlatVector::Validity(args.data[1]);
 
     auto &struct_entries = StructVector::GetEntries(result);
     auto count_data = FlatVector::GetData<int64_t>(*struct_entries[0]);
@@ -377,7 +370,7 @@ static void STNormalizedDifferenceStatsFunction(DataChunk &args, ExpressionState
     auto &result_validity = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!band1_validity.RowIsValid(i) || !band2_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             result_validity.SetInvalid(i);
             continue;
         }

@@ -5,6 +5,7 @@
 #include "band_decoder.hpp"
 #include "raquet_metadata.hpp"
 #include "quadbin.hpp"
+#include "vector_args.hpp"
 #include <cmath>
 #include <limits>
 #include <cstring>
@@ -557,13 +558,11 @@ static void RegionStatsUpdate(Vector inputs[], AggregateInputData &aggr_input_da
     auto region_data = FlatVector::GetData<string_t>(inputs[2]);
     auto metadata_data = FlatVector::GetData<string_t>(inputs[3]);
 
-    auto &band_validity = FlatVector::Validity(inputs[0]);
-    auto &region_validity = FlatVector::Validity(inputs[2]);
 
     auto states = FlatVector::GetData<RegionStatsState *>(state_vector);
 
     for (idx_t i = 0; i < count; i++) {
-        if (!band_validity.RowIsValid(i) || !region_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(inputs, input_count, i)) {
             continue;
         }
 
@@ -599,14 +598,12 @@ static void RegionStatsUpdateNodata(Vector inputs[], AggregateInputData &aggr_in
     auto metadata_data = FlatVector::GetData<string_t>(inputs[3]);
     auto nodata_data = FlatVector::GetData<double>(inputs[4]);
 
-    auto &band_validity = FlatVector::Validity(inputs[0]);
-    auto &region_validity = FlatVector::Validity(inputs[2]);
     auto &nodata_validity = FlatVector::Validity(inputs[4]);
 
     auto states = FlatVector::GetData<RegionStatsState *>(state_vector);
 
     for (idx_t i = 0; i < count; i++) {
-        if (!band_validity.RowIsValid(i) || !region_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(inputs, input_count, i, 4)) {
             continue;
         }
 
@@ -658,13 +655,11 @@ static void RegionStatsUpdateResolution(Vector inputs[], AggregateInputData &agg
     auto metadata_data = FlatVector::GetData<string_t>(inputs[3]);
     auto resolution_data = FlatVector::GetData<string_t>(inputs[4]);
 
-    auto &band_validity = FlatVector::Validity(inputs[0]);
-    auto &region_validity = FlatVector::Validity(inputs[2]);
 
     auto states = FlatVector::GetData<RegionStatsState *>(state_vector);
 
     for (idx_t i = 0; i < count; i++) {
-        if (!band_validity.RowIsValid(i) || !region_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(inputs, input_count, i)) {
             continue;
         }
 
@@ -698,14 +693,12 @@ static void RegionStatsUpdateNodataResolution(Vector inputs[], AggregateInputDat
     auto nodata_data = FlatVector::GetData<double>(inputs[4]);
     auto resolution_data = FlatVector::GetData<string_t>(inputs[5]);
 
-    auto &band_validity = FlatVector::Validity(inputs[0]);
-    auto &region_validity = FlatVector::Validity(inputs[2]);
     auto &nodata_validity = FlatVector::Validity(inputs[4]);
 
     auto states = FlatVector::GetData<RegionStatsState *>(state_vector);
 
     for (idx_t i = 0; i < count; i++) {
-        if (!band_validity.RowIsValid(i) || !region_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(inputs, input_count, i, 4)) {
             continue;
         }
 

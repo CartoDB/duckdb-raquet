@@ -9,6 +9,7 @@
 #include <cstring>
 #include <string>
 #include "yyjson.hpp"
+#include "vector_args.hpp"
 
 using namespace duckdb_yyjson;
 
@@ -326,8 +327,6 @@ static void STClipFunction(DataChunk &args, ExpressionState &state, Vector &resu
     auto clip_geom_data = FlatVector::GetData<string_t>(args.data[2]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[3]);
 
-    auto &band_validity = FlatVector::Validity(args.data[0]);
-    auto &clip_validity = FlatVector::Validity(args.data[2]);
 
     auto list_data = ListVector::GetData(result);
     auto &list_child = ListVector::GetEntry(result);
@@ -335,7 +334,7 @@ static void STClipFunction(DataChunk &args, ExpressionState &state, Vector &resu
     idx_t total_list_size = 0;
 
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!band_validity.RowIsValid(i) || !clip_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
             FlatVector::Validity(result).SetInvalid(i);
@@ -472,15 +471,13 @@ static void STClipNodataFunction(DataChunk &args, ExpressionState &state, Vector
     auto metadata_data = FlatVector::GetData<string_t>(args.data[3]);
     auto nodata_data = FlatVector::GetData<double>(args.data[4]);
 
-    auto &band_validity = FlatVector::Validity(args.data[0]);
-    auto &clip_validity = FlatVector::Validity(args.data[2]);
 
     auto list_data = ListVector::GetData(result);
 
     idx_t total_list_size = 0;
 
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!band_validity.RowIsValid(i) || !clip_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
             FlatVector::Validity(result).SetInvalid(i);
@@ -612,15 +609,13 @@ static void STClipMaskFunction(DataChunk &args, ExpressionState &state, Vector &
     auto metadata_data = FlatVector::GetData<string_t>(args.data[3]);
     auto nodata_data = FlatVector::GetData<double>(args.data[4]);
 
-    auto &band_validity = FlatVector::Validity(args.data[0]);
-    auto &clip_validity = FlatVector::Validity(args.data[2]);
 
     auto list_data = ListVector::GetData(result);
 
     idx_t total_list_size = 0;
 
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!band_validity.RowIsValid(i) || !clip_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
             FlatVector::Validity(result).SetInvalid(i);

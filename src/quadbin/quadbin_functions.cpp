@@ -400,6 +400,10 @@ static void QuadbinToBboxFunction(DataChunk &args, ExpressionState &state, Vecto
     auto cell_data = FlatVector::GetData<uint64_t>(cell_vec);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            FlatVector::Validity(result).SetInvalid(i);
+            continue;
+        }
         auto cell = cell_data[i];
 
         int x, y, z;
@@ -469,6 +473,10 @@ static void STIntersectsFunction(DataChunk &args, ExpressionState &state, Vector
     auto result_data = FlatVector::GetData<bool>(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            FlatVector::Validity(result).SetInvalid(i);
+            continue;
+        }
         auto cell = cell_data[i];
         auto geom = geom_data[i];
 
@@ -506,6 +514,10 @@ static void STContainsFunction(DataChunk &args, ExpressionState &state, Vector &
     auto result_data = FlatVector::GetData<bool>(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            FlatVector::Validity(result).SetInvalid(i);
+            continue;
+        }
         auto geom = geom_data[i];
         auto cell = cell_data[i];
 
@@ -871,6 +883,10 @@ static void STPointFunction(DataChunk &args, ExpressionState &state, Vector &res
     memcpy(wkb + 1, &point_type, 4);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            FlatVector::Validity(result).SetInvalid(i);
+            continue;
+        }
         double lon = lon_data[i];
         double lat = lat_data[i];
         memcpy(wkb + 5, &lon, 8);
@@ -890,6 +906,10 @@ static void STXFunction(DataChunk &args, ExpressionState &state, Vector &result)
     auto &result_mask = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            result_mask.SetInvalid(i);
+            continue;
+        }
         auto geom = geom_data[i];
         const uint8_t* data = reinterpret_cast<const uint8_t*>(geom.GetData());
         idx_t size = geom.GetSize();
@@ -927,6 +947,10 @@ static void STYFunction(DataChunk &args, ExpressionState &state, Vector &result)
     auto &result_mask = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            result_mask.SetInvalid(i);
+            continue;
+        }
         auto geom = geom_data[i];
         const uint8_t* data = reinterpret_cast<const uint8_t*>(geom.GetData());
         idx_t size = geom.GetSize();

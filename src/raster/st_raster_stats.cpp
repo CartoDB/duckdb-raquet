@@ -5,6 +5,7 @@
 #include "band_decoder.hpp"
 #include "raquet_metadata.hpp"
 #include "quadbin.hpp"
+#include "vector_args.hpp"
 #include <cmath>
 
 namespace duckdb {
@@ -34,7 +35,6 @@ static void STRasterSummaryStatsFunction(DataChunk &args, ExpressionState &state
     auto compression_data = FlatVector::GetData<string_t>(compression_vec);
     auto nodata_data = FlatVector::GetData<double>(nodata_vec);
 
-    auto &band_validity = FlatVector::Validity(band_vec);
     auto &nodata_validity = FlatVector::Validity(nodata_vec);
 
     auto &struct_entries = StructVector::GetEntries(result);
@@ -49,7 +49,7 @@ static void STRasterSummaryStatsFunction(DataChunk &args, ExpressionState &state
 
     for (idx_t i = 0; i < args.size(); i++) {
         // Check for NULL band data
-        if (!band_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i, 5)) {
             result_validity.SetInvalid(i);
             continue;
         }
@@ -115,7 +115,6 @@ static void STRasterSummaryStatsSimpleFunction(DataChunk &args, ExpressionState 
     auto height_data = FlatVector::GetData<int32_t>(height_vec);
     auto compression_data = FlatVector::GetData<string_t>(compression_vec);
 
-    auto &band_validity = FlatVector::Validity(band_vec);
 
     auto &struct_entries = StructVector::GetEntries(result);
     auto count_data = FlatVector::GetData<int64_t>(*struct_entries[0]);
@@ -129,7 +128,7 @@ static void STRasterSummaryStatsSimpleFunction(DataChunk &args, ExpressionState 
 
     for (idx_t i = 0; i < args.size(); i++) {
         // Check for NULL band data
-        if (!band_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             result_validity.SetInvalid(i);
             continue;
         }
@@ -184,7 +183,6 @@ static void STRasterSummaryStatsMetadataFunction(DataChunk &args, ExpressionStat
     auto band_data = FlatVector::GetData<string_t>(args.data[0]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[1]);
 
-    auto &band_validity = FlatVector::Validity(args.data[0]);
 
     auto &struct_entries = StructVector::GetEntries(result);
     auto count_data = FlatVector::GetData<int64_t>(*struct_entries[0]);
@@ -197,7 +195,7 @@ static void STRasterSummaryStatsMetadataFunction(DataChunk &args, ExpressionStat
     auto &result_validity = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!band_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i)) {
             result_validity.SetInvalid(i);
             continue;
         }
@@ -249,7 +247,6 @@ static void STRasterSummaryStatsMetadataNodataFunction(DataChunk &args, Expressi
     auto metadata_data = FlatVector::GetData<string_t>(args.data[1]);
     auto nodata_data = FlatVector::GetData<double>(args.data[2]);
 
-    auto &band_validity = FlatVector::Validity(args.data[0]);
     auto &nodata_validity = FlatVector::Validity(args.data[2]);
 
     auto &struct_entries = StructVector::GetEntries(result);
@@ -263,7 +260,7 @@ static void STRasterSummaryStatsMetadataNodataFunction(DataChunk &args, Expressi
     auto &result_validity = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
-        if (!band_validity.RowIsValid(i)) {
+        if (raquet::AnyInputNull(args, i, 2)) {
             result_validity.SetInvalid(i);
             continue;
         }

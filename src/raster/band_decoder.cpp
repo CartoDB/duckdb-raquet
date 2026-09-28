@@ -20,6 +20,10 @@
 namespace duckdb {
 namespace raquet {
 
+// Upper bound for one decompressed band. A 4096x4096 float64 tile is 128 MiB; anything past
+// this is corrupt input, not a real tile.
+static constexpr size_t MAX_DECOMPRESSED_SIZE = size_t(1) << 30;
+
 std::vector<uint8_t> decompress_gzip(const uint8_t *data, size_t size) {
     if (size == 0) {
         return {};
@@ -37,6 +41,7 @@ std::vector<uint8_t> decompress_gzip(const uint8_t *data, size_t size) {
         // For larger compressed data, use a ratio-based estimate
         estimated_size = std::max(estimated_size, size * 100);
     }
+    estimated_size = std::min(estimated_size, MAX_DECOMPRESSED_SIZE);
 
     std::vector<uint8_t> result(estimated_size);
 
@@ -58,10 +63,22 @@ std::vector<uint8_t> decompress_gzip(const uint8_t *data, size_t size) {
     while (ret != Z_STREAM_END) {
         ret = inflate(&strm, Z_NO_FLUSH);
 
+        if (ret != Z_STREAM_END && strm.avail_in == 0 && strm.avail_out > 0) {
+            // All input consumed without reaching the end of the stream: more output space
+            // will not help, and doubling the buffer here would grow it forever
+            inflateEnd(&strm);
+            throw std::runtime_error("inflate failed: truncated or corrupt gzip data");
+        }
+
         if (ret == Z_BUF_ERROR || (ret == Z_OK && strm.avail_out == 0)) {
             // Need more output space
             total_out = result.size() - strm.avail_out;
             size_t new_size = result.size() * 2;
+            if (new_size > MAX_DECOMPRESSED_SIZE) {
+                inflateEnd(&strm);
+                throw std::runtime_error("inflate failed: decompressed band exceeds " +
+                                         std::to_string(MAX_DECOMPRESSED_SIZE) + " bytes");
+            }
             result.resize(new_size);
             strm.next_out = result.data() + total_out;
             strm.avail_out = static_cast<uInt>(result.size() - total_out);
