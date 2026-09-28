@@ -1,0 +1,52 @@
+# name: test/sql/null_inputs.test
+# description: NULL inputs give NULL, never a decode of the uninitialized string slot
+# group: [raquet]
+
+require raquet
+
+require parquet
+
+# A raquet file mixes the metadata row (band_1 IS NULL) with data tiles. Shuffled with small
+# row groups, NULL and non-NULL BLOBs share every vector: the layout that made raquet_pixel
+# inflate an uninitialized string_t (inflate failed: -3, segfaults, runaway allocations).
+statement ok
+COPY (SELECT r.* FROM 'test/data/raquet_test.parquet' r, range(4000) ORDER BY hash(range, r.block))
+TO '__TEST_DIR__/null_inputs.parquet' (FORMAT parquet, ROW_GROUP_SIZE 100);
+
+statement ok
+CREATE TABLE meta AS SELECT metadata FROM 'test/data/raquet_test.parquet' WHERE block = 0;
+
+query II
+SELECT count(*) FILTER (v IS NULL), count(*) FILTER (v IS NOT NULL)
+FROM (SELECT raquet_pixel(band_1, 'uint8', 0, 0, 256, 'gzip') AS v
+      FROM '__TEST_DIR__/null_inputs.parquet', meta m);
+----
+4000	8000
+
+query II
+SELECT count(*) FILTER (v IS NULL), count(*) FILTER (len(v) > 0)
+FROM (SELECT raquet_decode_band(band_1, 'uint8', 256, 256, 'gzip') AS v
+      FROM '__TEST_DIR__/null_inputs.parquet', meta m);
+----
+4000	8000
+
+query II
+SELECT count(*) FILTER (v IS NULL), count(*) FILTER (v IS NOT NULL)
+FROM (SELECT raquet_pixel(band_1, m.metadata, 0, 0) AS v FROM '__TEST_DIR__/null_inputs.parquet', meta m);
+----
+4000	8000
+
+query II
+SELECT count(*) FILTER (v IS NULL), count(*) FILTER (v IS NOT NULL)
+FROM (SELECT raquet_pixel(band_1, m.metadata, 0, 0, 0) AS v FROM '__TEST_DIR__/null_inputs.parquet', meta m);
+----
+4000	8000
+
+# explicit NULLs in every argument position
+query IIII
+SELECT raquet_pixel(NULL::BLOB, 'uint8', 0, 0, 4, 'none'),
+       raquet_pixel('\x01\x02\x03\x04'::BLOB, NULL, 0, 0, 4, 'none'),
+       raquet_pixel('\x01\x02\x03\x04'::BLOB, 'uint8', NULL, 0, 4, 'none'),
+       raquet_pixel('\x01\x02\x03\x04'::BLOB, 'uint8', 0, 0, 4, NULL);
+----
+NULL	NULL	NULL	NULL

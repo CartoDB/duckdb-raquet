@@ -4,6 +4,7 @@
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "quadbin.hpp"
+#include "vector_args.hpp"
 #include <sstream>
 #include <iomanip>
 #include <vector>
@@ -418,6 +419,7 @@ static void QuadbinToBboxFunction(DataChunk &args, ExpressionState &state, Vecto
 
 // quadbin_pixel_xy(lon, lat, resolution, tile_size) -> STRUCT(pixel_x INT, pixel_y INT)
 static void QuadbinPixelXYFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+    raquet::FlattenArgs(args);
     auto &lon_vec = args.data[0];
     auto &lat_vec = args.data[1];
     auto &res_vec = args.data[2];
@@ -428,6 +430,10 @@ static void QuadbinPixelXYFunction(DataChunk &args, ExpressionState &state, Vect
     auto &py_result = *struct_entries[1];
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            FlatVector::Validity(result).SetInvalid(i);
+            continue;
+        }
         auto lon = FlatVector::GetData<double>(lon_vec)[i];
         auto lat = FlatVector::GetData<double>(lat_vec)[i];
         auto resolution = FlatVector::GetData<int32_t>(res_vec)[i];
@@ -618,6 +624,7 @@ static void QuadbinToParentResFunction(DataChunk &args, ExpressionState &state, 
 // quadbin_to_children(cell) -> LIST(UBIGINT)
 // Get 4 children cells at resolution + 1
 static void QuadbinToChildrenFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+    raquet::FlattenArgs(args);
     auto &cell_vec = args.data[0];
     auto list_size = args.size();
 
@@ -627,6 +634,12 @@ static void QuadbinToChildrenFunction(DataChunk &args, ExpressionState &state, V
 
     idx_t total_children = 0;
     for (idx_t i = 0; i < list_size; i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            list_data[i].offset = total_children;
+            list_data[i].length = 0;
+            FlatVector::Validity(result).SetInvalid(i);
+            continue;
+        }
         auto cell = FlatVector::GetData<uint64_t>(cell_vec)[i];
 
         uint64_t children[4];
@@ -648,6 +661,7 @@ static void QuadbinToChildrenFunction(DataChunk &args, ExpressionState &state, V
 // quadbin_to_children(cell, resolution) -> LIST(UBIGINT)
 // Get all children cells at specified resolution
 static void QuadbinToChildrenResFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+    raquet::FlattenArgs(args);
     auto &cell_vec = args.data[0];
     auto &res_vec = args.data[1];
     auto list_size = args.size();
@@ -657,6 +671,12 @@ static void QuadbinToChildrenResFunction(DataChunk &args, ExpressionState &state
 
     idx_t total_children = 0;
     for (idx_t i = 0; i < list_size; i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            list_data[i].offset = total_children;
+            list_data[i].length = 0;
+            FlatVector::Validity(result).SetInvalid(i);
+            continue;
+        }
         auto cell = FlatVector::GetData<uint64_t>(cell_vec)[i];
         auto target_res = FlatVector::GetData<int32_t>(res_vec)[i];
 
@@ -691,6 +711,7 @@ static void QuadbinToChildrenResFunction(DataChunk &args, ExpressionState &state
 // quadbin_sibling(cell) -> LIST(UBIGINT)
 // Get sibling cells (other children of the same parent)
 static void QuadbinSiblingFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+    raquet::FlattenArgs(args);
     auto &cell_vec = args.data[0];
     auto list_size = args.size();
 
@@ -699,6 +720,12 @@ static void QuadbinSiblingFunction(DataChunk &args, ExpressionState &state, Vect
 
     idx_t total_siblings = 0;
     for (idx_t i = 0; i < list_size; i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            list_data[i].offset = total_siblings;
+            list_data[i].length = 0;
+            FlatVector::Validity(result).SetInvalid(i);
+            continue;
+        }
         auto cell = FlatVector::GetData<uint64_t>(cell_vec)[i];
 
         uint64_t siblings[4];
@@ -777,6 +804,7 @@ static void STGeomFromQuadbinFunction(DataChunk &args, ExpressionState &state, V
 // quadbin_kring(cell, k) -> LIST(UBIGINT)
 // Get cells within k distance from center
 static void QuadbinKringFunction(DataChunk &args, ExpressionState &state, Vector &result) {
+    raquet::FlattenArgs(args);
     auto &cell_vec = args.data[0];
     auto &k_vec = args.data[1];
     auto list_size = args.size();
@@ -786,6 +814,12 @@ static void QuadbinKringFunction(DataChunk &args, ExpressionState &state, Vector
 
     idx_t total_neighbors = 0;
     for (idx_t i = 0; i < list_size; i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            list_data[i].offset = total_neighbors;
+            list_data[i].length = 0;
+            FlatVector::Validity(result).SetInvalid(i);
+            continue;
+        }
         auto cell = FlatVector::GetData<uint64_t>(cell_vec)[i];
         auto k = FlatVector::GetData<int32_t>(k_vec)[i];
 

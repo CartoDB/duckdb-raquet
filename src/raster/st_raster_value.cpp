@@ -5,6 +5,7 @@
 #include "band_decoder.hpp"
 #include "quadbin.hpp"
 #include "raquet_metadata.hpp"
+#include "vector_args.hpp"
 #include <cstring>
 
 namespace duckdb {
@@ -104,6 +105,10 @@ static void RaquetPixelFunction(DataChunk &args, ExpressionState &state, Vector 
     auto &result_mask = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            result_mask.SetInvalid(i);
+            continue;
+        }
         auto band = band_data[i];
         auto dtype = dtype_data[i].GetString();
         auto x = x_data[i];
@@ -163,6 +168,12 @@ static void RaquetDecodeBandFunction(DataChunk &args, ExpressionState &state, Ve
     idx_t total_list_size = 0;
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            list_data[i].offset = total_list_size;
+            list_data[i].length = 0;
+            FlatVector::Validity(result).SetInvalid(i);
+            continue;
+        }
         auto band = band_data[i];
         auto dtype = dtype_data[i].GetString();
         auto width = width_data[i];
@@ -229,6 +240,10 @@ static void RaquetPixelWithMetadataFunction(DataChunk &args, ExpressionState &st
     auto &result_mask = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            result_mask.SetInvalid(i);
+            continue;
+        }
         auto band = band_data[i];
         auto metadata_str = metadata_data[i].GetString();
         auto x = x_data[i];
@@ -288,6 +303,10 @@ static void RaquetPixelWithMetadataAndBandFunction(DataChunk &args, ExpressionSt
     auto &result_mask = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            result_mask.SetInvalid(i);
+            continue;
+        }
         auto band = band_data[i];
         auto metadata_str = metadata_data[i].GetString();
         auto band_idx = band_idx_data[i];
@@ -374,6 +393,10 @@ static void STRasterValueWithGeometryFunction(DataChunk &args, ExpressionState &
     auto &result_mask = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            result_mask.SetInvalid(i);
+            continue;
+        }
         auto block = block_data[i];
         auto band = band_data[i];
         auto geom = geom_data[i];
@@ -460,6 +483,10 @@ static void STRasterValueWithGeometryAndBandNameFunction(DataChunk &args, Expres
     auto &result_mask = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            result_mask.SetInvalid(i);
+            continue;
+        }
         auto block = block_data[i];
         auto band = band_data[i];
         auto geom = geom_data[i];
@@ -558,6 +585,10 @@ static void RaquetPixelInterleavedFunction(DataChunk &args, ExpressionState &sta
     auto &result_mask = FlatVector::Validity(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
+        if (raquet::AnyInputNull(args, i)) {
+            result_mask.SetInvalid(i);
+            continue;
+        }
         auto pixels = pixels_data[i];
         auto metadata_str = metadata_data[i].GetString();
         auto band_idx = band_idx_data[i];
