@@ -1,0 +1,42 @@
+# name: test/sql/constant_args.test
+# description: literal (CONSTANT vector) arguments give the same result on every row as per-row arguments
+# group: [raquet]
+
+require raquet
+
+# 50 cells; a literal zoom / tile size / k is a CONSTANT vector. Functions that read
+# FlatVector::GetData(...)[i] without flattening read garbage from row 1 on
+# (quadbin_pixel_xy returned 0 or 1415242944; quadbin_kring(cell, 1) did not return).
+statement ok
+CREATE TABLE c AS SELECT quadbin_from_lonlat(-3.7 + i * 0.001, 40.4 + i * 0.0005, 12) AS cell,
+                         -3.7 + i * 0.001 AS lon, 40.4 + i * 0.0005 AS lat
+FROM range(50) t(i);
+
+# the second call makes the argument non-constant (0 * rowid), the reference value
+query I
+SELECT count(*) FILTER (quadbin_pixel_xy(lon, lat, 17, 256)
+                        IS DISTINCT FROM quadbin_pixel_xy(lon, lat, (17 + 0 * rowid)::INT, (256 + 0 * rowid)::INT))
+FROM c;
+----
+0
+
+query II
+SELECT count(*) FILTER (quadbin_kring(cell, 1) IS DISTINCT FROM quadbin_kring(cell, (1 + 0 * rowid)::INT)),
+       count(*) FILTER (len(quadbin_kring(cell, 1)) = 9)
+FROM c;
+----
+0	50
+
+query II
+SELECT count(*) FILTER (quadbin_to_children(cell, 14) IS DISTINCT FROM quadbin_to_children(cell, (14 + 0 * rowid)::INT)),
+       count(*) FILTER (len(quadbin_to_children(cell, 14)) = 16)
+FROM c;
+----
+0	50
+
+# NULL in, NULL out
+query IIIII
+SELECT quadbin_pixel_xy(NULL::DOUBLE, 40.4, 17, 256), quadbin_kring(NULL::UBIGINT, 1),
+       quadbin_to_children(NULL::UBIGINT), quadbin_to_children(NULL::UBIGINT, 14), quadbin_sibling(NULL::UBIGINT);
+----
+NULL	NULL	NULL	NULL	NULL
