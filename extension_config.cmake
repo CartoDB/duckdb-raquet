@@ -8,3 +8,7 @@ duckdb_extension_load(raquet
 
 # Include parquet (required for read_parquet)
 duckdb_extension_load(parquet)
+
+# Include json: most read_raster / metadata tests `require json`, and without it
+# the unittest runner silently skips them.
+duckdb_extension_load(json)
