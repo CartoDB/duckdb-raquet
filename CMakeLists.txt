@@ -62,34 +62,46 @@ if(GDAL_FOUND)
         src/raster/read_raster.cpp
         src/raster/band_stats.cpp)
 
-    # Find PROJ and SQLite3 for embedded proj.db support
-    find_package(PROJ QUIET CONFIG)
-    find_package(unofficial-sqlite3 QUIET CONFIG)
-    if(NOT unofficial-sqlite3_FOUND)
-        find_package(SQLite3 QUIET)
-    endif()
+    # Embedding proj.db links a second copy of libproj into the process. That
+    # is required for standalone deployment (no proj.db on disk), but it must
+    # be OFF when the GDAL being linked bundles its own private PROJ build
+    # (e.g. the OSGeo docker images' "internalproj"): GDAL only renames PROJ's
+    # C API, so the C++ symbols of the two libproj copies collide at dynamic
+    # link time and corrupt memory at runtime.
+    option(RAQUET_EMBED_PROJ_DB "Embed proj.db and link PROJ for standalone deployment" ON)
 
-    # Generate proj_db.c from proj.db at build time
-    # Find proj.db from PROJ's share directory
+    # Find PROJ and SQLite3 for embedded proj.db support
     set(PROJ_DB_FOUND FALSE)
-    if(PROJ_FOUND OR PROJ4_FOUND)
-        # Try vcpkg installed location
-        foreach(PREFIX ${CMAKE_PREFIX_PATH} ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET})
-            if(EXISTS "${PREFIX}/share/proj/proj.db")
-                set(PROJ_DB_PATH "${PREFIX}/share/proj/proj.db")
-                set(PROJ_DB_FOUND TRUE)
-                break()
-            endif()
-        endforeach()
-    endif()
-    # Fallback: system paths
-    if(NOT PROJ_DB_FOUND)
-        find_file(PROJ_DB_PATH proj.db
-            PATHS /opt/homebrew/share/proj /usr/share/proj /usr/local/share/proj
-            NO_DEFAULT_PATH)
-        if(PROJ_DB_PATH)
-            set(PROJ_DB_FOUND TRUE)
+    if(RAQUET_EMBED_PROJ_DB)
+        find_package(PROJ QUIET CONFIG)
+        find_package(unofficial-sqlite3 QUIET CONFIG)
+        if(NOT unofficial-sqlite3_FOUND)
+            find_package(SQLite3 QUIET)
         endif()
+
+        # Generate proj_db.c from proj.db at build time
+        # Find proj.db from PROJ's share directory
+        if(PROJ_FOUND OR PROJ4_FOUND)
+            # Try vcpkg installed location
+            foreach(PREFIX ${CMAKE_PREFIX_PATH} ${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET})
+                if(EXISTS "${PREFIX}/share/proj/proj.db")
+                    set(PROJ_DB_PATH "${PREFIX}/share/proj/proj.db")
+                    set(PROJ_DB_FOUND TRUE)
+                    break()
+                endif()
+            endforeach()
+        endif()
+        # Fallback: system paths
+        if(NOT PROJ_DB_FOUND)
+            find_file(PROJ_DB_PATH proj.db
+                PATHS /opt/homebrew/share/proj /usr/share/proj /usr/local/share/proj
+                NO_DEFAULT_PATH)
+            if(PROJ_DB_PATH)
+                set(PROJ_DB_FOUND TRUE)
+            endif()
+        endif()
+    else()
+        message(STATUS "PROJ database embedding disabled (RAQUET_EMBED_PROJ_DB=OFF)")
     endif()
 
     if(PROJ_DB_FOUND)
@@ -114,7 +126,7 @@ if(GDAL_FOUND)
             src/raster/proj_embed.cpp
         )
         message(STATUS "PROJ database embedding enabled")
-    else()
+    elseif(RAQUET_EMBED_PROJ_DB)
         message(STATUS "proj.db not found - PROJ_DATA env var required at runtime")
     endif()
 else()
@@ -146,6 +158,8 @@ if(NOT "${DUCKDB_EXTENSION_CONFIGS}" STREQUAL "")
         target_link_libraries(${EXTENSION_NAME} GDAL::GDAL)
         target_link_libraries(${LOADABLE_EXTENSION_NAME} GDAL::GDAL)
         if(PROJ_DB_FOUND)
+            target_compile_definitions(${EXTENSION_NAME} PRIVATE RAQUET_HAS_EMBEDDED_PROJ)
+            target_compile_definitions(${LOADABLE_EXTENSION_NAME} PRIVATE RAQUET_HAS_EMBEDDED_PROJ)
             if(TARGET PROJ::proj)
                 target_link_libraries(${EXTENSION_NAME} PROJ::proj)
                 target_link_libraries(${LOADABLE_EXTENSION_NAME} PROJ::proj)
@@ -176,6 +190,7 @@ else()
         target_compile_definitions(${EXTENSION_NAME} PRIVATE RAQUET_HAS_GDAL)
         target_link_libraries(${EXTENSION_NAME} GDAL::GDAL)
         if(PROJ_DB_FOUND)
+            target_compile_definitions(${EXTENSION_NAME} PRIVATE RAQUET_HAS_EMBEDDED_PROJ)
             if(TARGET PROJ::proj)
                 target_link_libraries(${EXTENSION_NAME} PROJ::proj)
             endif()
