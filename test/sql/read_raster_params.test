@@ -36,10 +36,24 @@ WHERE block = 0
 ----
 gzip
 
-# Per-band layout (default) rejects anything other than gzip / none.
+# Unknown codecs are rejected at bind time (any band layout).
 statement error
 SELECT count(*) FROM read_raster('test/data/test_palette.tif',
                                   compression='bogus', overviews='none')
+----
+compression must be 'none', 'gzip', 'jpeg', or 'webp'
+
+statement error
+SELECT count(*) FROM read_raster('test/data/test_palette.tif',
+                                  compression='bogus', band_layout='interleaved',
+                                  overviews='none')
+----
+compression must be 'none', 'gzip', 'jpeg', or 'webp'
+
+# Per-band layout (default) only supports gzip / none.
+statement error
+SELECT count(*) FROM read_raster('test/data/test_palette.tif',
+                                  compression='jpeg', overviews='none')
 ----
 requires interleaved band layout
 
@@ -63,6 +77,12 @@ FROM read_raster('test/data/test_palette.tif',
 WHERE block = 0
 ----
 sequential
+
+statement error
+SELECT count(*) FROM read_raster('test/data/test_palette.tif',
+                                  band_layout='bogus', overviews='none')
+----
+band_layout must be 'sequential' or 'interleaved'
 
 # ---------- block_size ------------------------------------------------------
 # 512 is accepted; reflected in tiling.block_{width,height}.
