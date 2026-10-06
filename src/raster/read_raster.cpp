@@ -336,9 +336,7 @@ struct ReadRasterGlobalState : public GlobalTableFunctionState {
     // to wait for in-flight workers before any thread reads total_blocks.
     std::atomic<idx_t> phase1_finished{0};
 
-    // Set when a worker throws, so siblings parked on wait_cv stop waiting for
-    // a tile that will never be counted in phase1_finished /
-    // overview_frames_processed (otherwise the query hangs instead of failing).
+    // Set when a worker throws so siblings stop waiting on wait_cv.
     std::atomic<bool> aborted{false};
 
     // Cross-phase wakeup. One mutex/cv pair handles all three transition
@@ -872,11 +870,12 @@ static TileData ReadAndCompressBands(
         for (int b = 0; b < band_count; b++) {
             if (compression == "gzip") {
                 result.compressed.push_back(raquet::compress_gzip(raw_bands[b].data(), raw_bands[b].size()));
-            } else if (compression == "none" || compression.empty()) {
+            } else if (compression == "none") {
                 result.compressed.push_back(std::move(raw_bands[b]));
             } else {
-                throw InvalidInputException("Compression '%s' requires interleaved band layout",
-                                             compression);
+                // ValidateEncodingOptions only lets gzip/none through for sequential.
+                throw InternalException("read_raster: unexpected compression '%s' for sequential layout",
+                                        compression);
             }
         }
     }
@@ -1066,6 +1065,37 @@ static int CalculateMinZoom(double minlon, double minlat, double maxlon, double 
     return std::max(0, std::min(max_zoom, min_zoom));
 }
 
+// Reject bad compression / band_layout at bind, before parallel workers run.
+static void ValidateEncodingOptions(ReadRasterBindData &bind_data) {
+    if (bind_data.band_layout != "sequential" && bind_data.band_layout != "interleaved") {
+        throw InvalidInputException("band_layout must be 'sequential' or 'interleaved'");
+    }
+    if (bind_data.compression.empty()) {
+        bind_data.compression = "none";
+    }
+    const auto &compression = bind_data.compression;
+    if (compression != "none" && compression != "gzip" && compression != "jpeg" &&
+        compression != "webp") {
+        throw InvalidInputException("compression must be 'none', 'gzip', 'jpeg', or 'webp'");
+    }
+    if ((compression == "jpeg" || compression == "webp") &&
+        bind_data.band_layout != "interleaved") {
+        throw InvalidInputException(
+            "Compression '%s' requires interleaved band layout (band_layout='interleaved')",
+            compression);
+    }
+#ifndef RAQUET_HAS_JPEG
+    if (compression == "jpeg") {
+        throw InvalidInputException("JPEG compression not available (libjpeg not linked)");
+    }
+#endif
+#ifndef RAQUET_HAS_WEBP
+    if (compression == "webp") {
+        throw InvalidInputException("WebP compression not available (libwebp not linked)");
+    }
+#endif
+}
+
 // ─────────────────────────────────────────────
 // BIND
 // ─────────────────────────────────────────────
@@ -1171,37 +1201,7 @@ static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
         }
     }
 
-    // Validate compression / band_layout up front. Encoding runs inside the
-    // parallel Execute workers, so a bad value would otherwise surface late
-    // (or, for interleaved + unknown compression, silently write raw pixels
-    // while the metadata advertises the bogus codec).
-    if (bind_data->band_layout != "sequential" && bind_data->band_layout != "interleaved") {
-        throw InvalidInputException("band_layout must be 'sequential' or 'interleaved'");
-    }
-    if (bind_data->compression.empty()) {
-        bind_data->compression = "none";
-    }
-    const auto &compression = bind_data->compression;
-    if (compression != "none" && compression != "gzip" && compression != "jpeg" &&
-        compression != "webp") {
-        throw InvalidInputException("compression must be 'none', 'gzip', 'jpeg', or 'webp'");
-    }
-    if ((compression == "jpeg" || compression == "webp") &&
-        bind_data->band_layout != "interleaved") {
-        throw InvalidInputException(
-            "Compression '%s' requires interleaved band layout (band_layout='interleaved')",
-            compression);
-    }
-#ifndef RAQUET_HAS_JPEG
-    if (compression == "jpeg") {
-        throw InvalidInputException("JPEG compression not available (libjpeg not linked)");
-    }
-#endif
-#ifndef RAQUET_HAS_WEBP
-    if (compression == "webp") {
-        throw InvalidInputException("WebP compression not available (libwebp not linked)");
-    }
-#endif
+    ValidateEncodingOptions(*bind_data);
 
     // Initialize embedded PROJ database and GDAL
     raquet::InitEmbeddedProj();
