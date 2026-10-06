@@ -17,10 +17,6 @@ require raquet
 # without it. Run locally with RAQUET_TEST_GDAL=1 against a GDAL build.
 require-env RAQUET_TEST_GDAL
 
-# The queries themselves do not call json_extract; they read metadata via
-# raquet_parse_metadata.
-require json
-
 # ============================================================================
 # Fixture: test/data/test_palette.tif — 16x16 uint8 single-band palette
 # raster, EPSG:4326, nodata=0. Cheap to convert under any param combination.
