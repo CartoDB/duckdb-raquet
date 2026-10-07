@@ -5,7 +5,10 @@
 
 require raquet
 
-# Gated like the other read_raster tests (see read_raster_params.test)
+# read_raster() is only compiled in with GDAL (RAQUET_HAS_GDAL); CI builds
+# without it. Run locally with RAQUET_TEST_GDAL=1 against a GDAL build.
+require-env RAQUET_TEST_GDAL
+
 require json
 
 # test/data/float_no_nodata.tif: 64x64 float32, some NaN pixels, no nodata

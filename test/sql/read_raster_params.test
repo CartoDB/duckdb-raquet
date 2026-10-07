@@ -13,12 +13,9 @@
 
 require raquet
 
-# `require json` matches the convention used by every other read_raster
-# test in the suite — keeps this file gated on the same environment those
-# tests assume (CI, where the json extension is bundled). The queries
-# themselves do not call json_extract; they read metadata via
-# raquet_parse_metadata.
-require json
+# read_raster() is only compiled in with GDAL (RAQUET_HAS_GDAL); CI builds
+# without it. Run locally with RAQUET_TEST_GDAL=1 against a GDAL build.
+require-env RAQUET_TEST_GDAL
 
 # ============================================================================
 # Fixture: test/data/test_palette.tif — 16x16 uint8 single-band palette

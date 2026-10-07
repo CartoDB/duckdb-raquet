@@ -9,11 +9,14 @@ make -j8
 # Run tests
 build/release/test/unittest --test-dir . "test/sql/*"
 
+# read_raster() tests need a GDAL build and are skipped unless opted in
+RAQUET_TEST_GDAL=1 build/release/test/unittest --test-dir . "test/sql/*"
+
 # Quick smoke test of read_raster (requires GDAL)
 build/release/duckdb -c "SELECT count(*) FROM read_raster('path/to/file.tif', max_zoom=8, overviews='none');"
 ```
 
-Test files use DuckDB `.test` format with `require raquet` + `require parquet`.
+Test files use DuckDB `.test` format with `require raquet` + `require parquet`. Tests that call `read_raster()` also need `require-env RAQUET_TEST_GDAL` (CI builds without GDAL).
 
 ## Architecture
 
