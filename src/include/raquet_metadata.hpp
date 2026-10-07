@@ -74,17 +74,17 @@ struct BandInfo {
 struct RaquetMetadata {
     std::string file_format;  // new in v0.3.0: should be "raquet"
     std::string compression;
-    int compression_quality;  // new in v0.4.0: JPEG/WebP quality (1-100), 0 if not specified
+    int compression_quality = 0;  // new in v0.4.0: JPEG/WebP quality (1-100), 0 if not specified
     std::string band_layout;  // new in v0.4.0: "sequential" (default) or "interleaved"
-    int block_width;
-    int block_height;
-    int min_zoom;       // was minresolution
-    int max_zoom;       // was maxresolution
-    int pixel_zoom;     // new in v0.3.0
-    int num_blocks;
+    int block_width = 0;
+    int block_height = 0;
+    int min_zoom = 0;       // was minresolution
+    int max_zoom = 0;       // was maxresolution
+    int pixel_zoom = 0;     // new in v0.3.0
+    int num_blocks = 0;
     std::string scheme; // "quadbin"
     std::string crs;    // "EPSG:3857"
-    bool tile_statistics;              // v0.5.0: pre-computed per-tile stats
+    bool tile_statistics = false;      // v0.5.0: pre-computed per-tile stats
     std::vector<std::string> tile_statistics_columns; // v0.5.0: which stats are available
     std::vector<BandInfo> band_info;  // Full band info including nodata
     std::vector<std::pair<std::string, std::string>> bands;  // name -> type (for backward compat)
