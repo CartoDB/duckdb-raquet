@@ -1,0 +1,72 @@
+# name: test/sql/read_raster_pixel_zoom.test
+# description: read_raster() writes pixel_zoom = max_zoom + log2(block_size).
+#              Regression for CartoDB/duckdb-raquet#14, where the block->pixel
+#              offset was added twice (max_zoom + 2*log2(block_size)).
+# group: [raquet]
+
+require raquet
+
+# read_raster() is only compiled in with GDAL (RAQUET_HAS_GDAL); CI builds
+# without it. Run locally with RAQUET_TEST_GDAL=1 against a GDAL build.
+require-env RAQUET_TEST_GDAL
+
+require json
+
+# ---------- v0.5.0: tiling.pixel_zoom ---------------------------------------
+# Default 256px blocks: +8.
+query III
+SELECT json_extract(metadata, '$.tiling.max_zoom')::INTEGER,
+       json_extract(metadata, '$.tiling.pixel_zoom')::INTEGER,
+       json_extract(metadata, '$.tiling.block_width')::INTEGER
+FROM read_raster('test/data/test_palette.tif', max_zoom=5, overviews='none')
+WHERE block = 0
+----
+5	13	256
+
+# 512px blocks: +9.
+query II
+SELECT json_extract(metadata, '$.tiling.max_zoom')::INTEGER,
+       json_extract(metadata, '$.tiling.pixel_zoom')::INTEGER
+FROM read_raster('test/data/test_palette.tif', max_zoom=5, block_size=512,
+                 overviews='none')
+WHERE block = 0
+----
+5	14
+
+# 1024px blocks: +10.
+query II
+SELECT json_extract(metadata, '$.tiling.max_zoom')::INTEGER,
+       json_extract(metadata, '$.tiling.pixel_zoom')::INTEGER
+FROM read_raster('test/data/test_palette.tif', max_zoom=5, block_size=1024,
+                 overviews='none')
+WHERE block = 0
+----
+5	15
+
+# Auto-detected zoom: the invariant holds whatever max_zoom is chosen.
+query I
+SELECT json_extract(metadata, '$.tiling.pixel_zoom')::INTEGER
+     - json_extract(metadata, '$.tiling.max_zoom')::INTEGER
+FROM read_raster('test/data/test_palette.tif')
+WHERE block = 0
+----
+8
+
+# ---------- v0.1.0: pixel_resolution (read by the Analytics Toolbox) --------
+query III
+SELECT json_extract(metadata, '$.block_resolution')::INTEGER,
+       json_extract(metadata, '$.pixel_resolution')::INTEGER,
+       json_extract(metadata, '$.block_width')::INTEGER
+FROM read_raster('test/data/test_palette.tif', max_zoom=5, format='v0',
+                 overviews='none')
+WHERE block = 0
+----
+5	13	256
+
+query I
+SELECT json_extract(metadata, '$.pixel_resolution')::INTEGER
+     - json_extract(metadata, '$.block_resolution')::INTEGER
+FROM read_raster('test/data/test_palette.tif', block_size=512, format='v0')
+WHERE block = 0
+----
+9

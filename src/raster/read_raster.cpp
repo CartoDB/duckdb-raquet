@@ -2114,8 +2114,9 @@ static void ReadRasterExecute(ClientContext &context, TableFunctionInput &data,
         meta.block_height = bind_data.block_size;
         meta.min_zoom = bind_data.min_zoom;
         meta.max_zoom = bind_data.max_zoom;
-        meta.pixel_zoom = bind_data.max_zoom +
-            static_cast<int>(std::log2(bind_data.block_size) * 2);
+        // A block at max_zoom holds block_size x block_size pixels, i.e.
+        // log2(block_size) quadtree levels below the block.
+        meta.pixel_zoom = bind_data.max_zoom + bind_data.block_zoom;
         meta.num_blocks = state.total_blocks;
         meta.bounds_minlon = bind_data.bounds_minlon;
         meta.bounds_minlat = bind_data.bounds_minlat;
