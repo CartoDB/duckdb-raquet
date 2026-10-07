@@ -336,6 +336,9 @@ struct ReadRasterGlobalState : public GlobalTableFunctionState {
     // to wait for in-flight workers before any thread reads total_blocks.
     std::atomic<idx_t> phase1_finished{0};
 
+    // Set when a worker throws so siblings stop waiting on wait_cv.
+    std::atomic<bool> aborted{false};
+
     // Cross-phase wakeup. One mutex/cv pair handles all three transition
     // points (phase1-stragglers done, phase2-init published, phase2 staging
     // published). Waiters use predicates that read the relevant atomic;
@@ -867,11 +870,12 @@ static TileData ReadAndCompressBands(
         for (int b = 0; b < band_count; b++) {
             if (compression == "gzip") {
                 result.compressed.push_back(raquet::compress_gzip(raw_bands[b].data(), raw_bands[b].size()));
-            } else if (compression == "none" || compression.empty()) {
+            } else if (compression == "none") {
                 result.compressed.push_back(std::move(raw_bands[b]));
             } else {
-                throw InvalidInputException("Compression '%s' requires interleaved band layout",
-                                             compression);
+                // ValidateEncodingOptions only lets gzip/none through for sequential.
+                throw InternalException("read_raster: unexpected compression '%s' for sequential layout",
+                                        compression);
             }
         }
     }
@@ -1061,6 +1065,37 @@ static int CalculateMinZoom(double minlon, double minlat, double maxlon, double 
     return std::max(0, std::min(max_zoom, min_zoom));
 }
 
+// Reject bad compression / band_layout at bind, before parallel workers run.
+static void ValidateEncodingOptions(ReadRasterBindData &bind_data) {
+    if (bind_data.band_layout != "sequential" && bind_data.band_layout != "interleaved") {
+        throw InvalidInputException("band_layout must be 'sequential' or 'interleaved'");
+    }
+    if (bind_data.compression.empty()) {
+        bind_data.compression = "none";
+    }
+    const auto &compression = bind_data.compression;
+    if (compression != "none" && compression != "gzip" && compression != "jpeg" &&
+        compression != "webp") {
+        throw InvalidInputException("compression must be 'none', 'gzip', 'jpeg', or 'webp'");
+    }
+    if ((compression == "jpeg" || compression == "webp") &&
+        bind_data.band_layout != "interleaved") {
+        throw InvalidInputException(
+            "Compression '%s' requires interleaved band layout (band_layout='interleaved')",
+            compression);
+    }
+#ifndef RAQUET_HAS_JPEG
+    if (compression == "jpeg") {
+        throw InvalidInputException("JPEG compression not available (libjpeg not linked)");
+    }
+#endif
+#ifndef RAQUET_HAS_WEBP
+    if (compression == "webp") {
+        throw InvalidInputException("WebP compression not available (libwebp not linked)");
+    }
+#endif
+}
+
 // ─────────────────────────────────────────────
 // BIND
 // ─────────────────────────────────────────────
@@ -1165,6 +1200,8 @@ static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
             }
         }
     }
+
+    ValidateEncodingOptions(*bind_data);
 
     // Initialize embedded PROJ database and GDAL
     raquet::InitEmbeddedProj();
@@ -1701,13 +1738,28 @@ static void EmitTileRow(DataChunk &output, idx_t row_count,
 // ─────────────────────────────────────────────
 // EXECUTE — two-phase: parallel native zoom, then single-thread overviews
 // ─────────────────────────────────────────────
-static void ReadRasterExecute(ClientContext &context, TableFunctionInput &data,
-                               DataChunk &output) {
+// Park on wait_cv until done() holds or a sibling worker aborted. Polls
+// context.interrupted so a cancelled query can't leave a worker parked forever.
+// Returns false when the scan was aborted.
+template <class Pred>
+static bool WaitForPhase(ClientContext &context, ReadRasterGlobalState &state, Pred done) {
+    std::unique_lock<std::mutex> lk(state.wait_mutex);
+    while (!done() && !state.aborted.load(std::memory_order_acquire)) {
+        if (context.interrupted) {
+            throw InterruptException();
+        }
+        state.wait_cv.wait_for(lk, std::chrono::milliseconds(100));
+    }
+    return !state.aborted.load(std::memory_order_acquire);
+}
+
+static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &data,
+                                  DataChunk &output) {
     auto &bind_data = data.bind_data->Cast<ReadRasterBindData>();
     auto &state = data.global_state->Cast<ReadRasterGlobalState>();
     auto &local = data.local_state->Cast<ReadRasterLocalState>();
 
-    if (state.finished) {
+    if (state.finished || state.aborted.load(std::memory_order_acquire)) {
         output.SetCardinality(0);
         return;
     }
@@ -1849,12 +1901,12 @@ static void ReadRasterExecute(ClientContext &context, TableFunctionInput &data,
                 // Wait for in-flight Phase 1 workers via condvar instead of
                 // burning CPU in a yield-loop. The final Phase 1 finisher
                 // notifies wait_cv after its fetch_add lands the total.
-                {
-                    std::unique_lock<std::mutex> lk(state.wait_mutex);
-                    state.wait_cv.wait(lk, [&] {
+                if (!WaitForPhase(context, state, [&] {
                         return state.phase1_finished.load(std::memory_order_acquire)
                                >= state.native_tiles.size();
-                    });
+                    })) {
+                    output.SetCardinality(0);
+                    return;
                 }
                 if (state.overview_frames.empty()) {
                     // Nothing to stage; skip straight to metadata.
@@ -1886,11 +1938,11 @@ static void ReadRasterExecute(ClientContext &context, TableFunctionInput &data,
                 // empty-frames short-circuit above flips it).
                 { std::lock_guard<std::mutex> lk(state.wait_mutex); }
                 state.wait_cv.notify_all();
-            } else {
-                std::unique_lock<std::mutex> lk(state.wait_mutex);
-                state.wait_cv.wait(lk, [&] {
-                    return state.phase2_init_done.load(std::memory_order_acquire);
-                });
+            } else if (!WaitForPhase(context, state, [&] {
+                           return state.phase2_init_done.load(std::memory_order_acquire);
+                       })) {
+                output.SetCardinality(0);
+                return;
             }
         }
 
@@ -2050,7 +2102,8 @@ static void ReadRasterExecute(ClientContext &context, TableFunctionInput &data,
             {
                 std::unique_lock<std::mutex> lk(state.wait_mutex);
                 state.wait_cv.wait_for(lk, std::chrono::milliseconds(50), [&] {
-                    return state.phase2_staged.load(std::memory_order_acquire);
+                    return state.phase2_staged.load(std::memory_order_acquire) ||
+                           state.aborted.load(std::memory_order_acquire);
                 });
             }
             if (!state.phase2_staged.load(std::memory_order_acquire)) {
@@ -2215,6 +2268,21 @@ static void ReadRasterExecute(ClientContext &context, TableFunctionInput &data,
     }
 
     output.SetCardinality(row_count);
+}
+
+static void ReadRasterExecute(ClientContext &context, TableFunctionInput &data,
+                              DataChunk &output) {
+    auto &state = data.global_state->Cast<ReadRasterGlobalState>();
+    try {
+        ReadRasterExecuteImpl(context, data, output);
+    } catch (...) {
+        // The tile this worker held will never be counted as finished; wake
+        // siblings parked on wait_cv so DuckDB can surface the error.
+        state.aborted.store(true, std::memory_order_release);
+        { std::lock_guard<std::mutex> lk(state.wait_mutex); }
+        state.wait_cv.notify_all();
+        throw;
+    }
 }
 
 // ─────────────────────────────────────────────

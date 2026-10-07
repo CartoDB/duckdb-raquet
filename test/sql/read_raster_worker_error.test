@@ -1,0 +1,33 @@
+# name: test/sql/read_raster_worker_error.test
+# description: An error raised inside a parallel read_raster() worker fails the
+#              query instead of leaving sibling workers parked on the phase
+#              barrier forever.
+# group: [raquet]
+
+require raquet
+
+# read_raster() is only compiled in with GDAL (RAQUET_HAS_GDAL); CI builds
+# without it. Run locally with RAQUET_TEST_GDAL=1 against a GDAL build.
+require-env RAQUET_TEST_GDAL
+
+# =============================================================================
+# Fixture: test/data/truncated_tiles.tif — 128x128 uint8 tiled (16x16) GeoTIFF
+# cut to 55% of its size. It opens (bind succeeds) but tiles past the cut fail
+# to read, so the warp of some native tiles throws during Execute.
+# =============================================================================
+
+statement ok
+SET threads=4
+
+statement error
+SELECT count(*) FROM read_raster('test/data/truncated_tiles.tif',
+                                  max_zoom=14, overviews='none')
+----
+Warp execution failed for tile
+
+# Same with overviews: the error must also escape the Phase 2 barrier.
+statement error
+SELECT count(*) FROM read_raster('test/data/truncated_tiles.tif',
+                                  max_zoom=14, min_zoom=10)
+----
+Warp execution failed for tile
