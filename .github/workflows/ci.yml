@@ -37,13 +37,13 @@ jobs:
 
     - name: Build extension (Release)
       run: |
-        # actions/checkout@v4 fetches the duckdb submodule shallowly by default,
-        # so `git describe --tags --long` inside duckdb/ fails and DuckDB's
-        # CMakeLists.txt falls back to embedding 'v0.0.1' as the binary's
-        # version. INSTALL <ext> then 404s against extensions.duckdb.org/v0.0.1/...
-        # Set OVERRIDE_GIT_DESCRIBE explicitly. Update the v2.0.0 below when
-        # bumping the duckdb submodule.
-        export OVERRIDE_GIT_DESCRIBE="v2.0.0-0-g$(cd duckdb && git rev-parse --short=10 HEAD)"
+        # actions/checkout@v4 fetches the duckdb submodule shallowly, so DuckDB
+        # can't derive its release version from tags and INSTALL <ext> 404s
+        # against extensions.duckdb.org. Set it explicitly. Since DuckDB 2.0
+        # this must be the bare release tag (the commit hash is read from git
+        # separately); a `vX.Y.Z-0-g<sha>` describe string is used verbatim.
+        # Update the v2.0.0 below when bumping the duckdb submodule.
+        export OVERRIDE_GIT_DESCRIBE="v2.0.0"
         echo "OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE"
         make release
 
@@ -131,13 +131,13 @@ jobs:
 
     - name: Build extension (Release)
       run: |
-        # actions/checkout@v4 fetches the duckdb submodule shallowly by default,
-        # so `git describe --tags --long` inside duckdb/ fails and DuckDB's
-        # CMakeLists.txt falls back to embedding 'v0.0.1' as the binary's
-        # version. INSTALL <ext> then 404s against extensions.duckdb.org/v0.0.1/...
-        # Set OVERRIDE_GIT_DESCRIBE explicitly. Update the v2.0.0 below when
-        # bumping the duckdb submodule.
-        export OVERRIDE_GIT_DESCRIBE="v2.0.0-0-g$(cd duckdb && git rev-parse --short=10 HEAD)"
+        # actions/checkout@v4 fetches the duckdb submodule shallowly, so DuckDB
+        # can't derive its release version from tags and INSTALL <ext> 404s
+        # against extensions.duckdb.org. Set it explicitly. Since DuckDB 2.0
+        # this must be the bare release tag (the commit hash is read from git
+        # separately); a `vX.Y.Z-0-g<sha>` describe string is used verbatim.
+        # Update the v2.0.0 below when bumping the duckdb submodule.
+        export OVERRIDE_GIT_DESCRIBE="v2.0.0"
         echo "OVERRIDE_GIT_DESCRIBE=$OVERRIDE_GIT_DESCRIBE"
         make release
 
