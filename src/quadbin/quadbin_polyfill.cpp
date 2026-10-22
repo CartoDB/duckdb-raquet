@@ -391,8 +391,8 @@ static std::vector<uint64_t> ComputePolyfill(const string_t &geom, int resolutio
 
 // QUADBIN_POLYFILL(geometry, resolution) -> LIST(UBIGINT)
 static void QuadbinPolyfillFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
 
     auto geom_data = FlatVector::GetData<string_t>(args.data[0]);
     auto res_data = FlatVector::GetData<int32_t>(args.data[1]);
@@ -434,9 +434,9 @@ static void QuadbinPolyfillFunction(DataChunk &args, ExpressionState &state, Vec
 
 // QUADBIN_POLYFILL(geometry, resolution, mode) -> LIST(UBIGINT)
 static void QuadbinPolyfillModeFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
 
     auto geom_data = FlatVector::GetData<string_t>(args.data[0]);
     auto res_data = FlatVector::GetData<int32_t>(args.data[1]);

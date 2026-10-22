@@ -15,12 +15,12 @@ namespace duckdb {
 // -> STRUCT(count BIGINT, sum DOUBLE, mean DOUBLE, min DOUBLE, max DOUBLE, stddev DOUBLE)
 static void STRasterSummaryStatsFunction(DataChunk &args, ExpressionState &state, Vector &result) {
     // Flatten all input vectors to ensure consistent access
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
-    args.data[4].Flatten(args.size());
-    args.data[5].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
+    args.data[4].Flatten();
+    args.data[5].Flatten();
 
     auto &band_vec = args.data[0];
     auto &dtype_vec = args.data[1];
@@ -98,11 +98,11 @@ static void STRasterSummaryStatsFunction(DataChunk &args, ExpressionState &state
 // Simplified version without nodata
 static void STRasterSummaryStatsSimpleFunction(DataChunk &args, ExpressionState &state, Vector &result) {
     // Flatten all input vectors to ensure consistent access
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
-    args.data[4].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
+    args.data[4].Flatten();
 
     auto &band_vec = args.data[0];
     auto &dtype_vec = args.data[1];
@@ -178,8 +178,8 @@ static void STRasterSummaryStatsSimpleFunction(DataChunk &args, ExpressionState 
 // ST_RasterSummaryStats(band BLOB, metadata VARCHAR) -> STRUCT
 // Extracts dtype, dimensions, compression, and nodata from metadata automatically
 static void STRasterSummaryStatsMetadataFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(args.data[0]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -240,9 +240,9 @@ static void STRasterSummaryStatsMetadataFunction(DataChunk &args, ExpressionStat
 // ST_RasterSummaryStats(band BLOB, metadata VARCHAR, nodata DOUBLE) -> STRUCT
 // Metadata-aware variant with explicit nodata override
 static void STRasterSummaryStatsMetadataNodataFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(args.data[0]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -310,7 +310,7 @@ static void STRasterSummaryStatsMetadataNodataFunction(DataChunk &args, Expressi
 // Passthrough for pre-computed tile statistics columns - no decompression needed
 static void STRasterSummaryStatsPrecomputedFunction(DataChunk &args, ExpressionState &state, Vector &result) {
     for (idx_t v = 0; v < 6; v++) {
-        args.data[v].Flatten(args.size());
+        args.data[v].Flatten();
     }
 
     auto in_count = FlatVector::GetData<int64_t>(args.data[0]);

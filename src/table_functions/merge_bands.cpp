@@ -327,7 +327,7 @@ static void RaquetMergeBandsExecute(ClientContext &context, TableFunctionInput &
     auto &state = input.global_state->Cast<RaquetMergeBandsGlobalState>();
 
     if (state.finished) {
-        output.SetCardinality(0);
+        output.SetChildCardinality(0);
         return;
     }
 
@@ -357,13 +357,13 @@ static void RaquetMergeBandsExecute(ClientContext &context, TableFunctionInput &
         }
         for (idx_t col = 0; col < band_count + 2; col++) {
             Value v = state.current_chunk->GetValue(col, state.current_row);
-            output.SetValue(col, out_row, v);
+            output.data[col].SetValue(out_row, v);
         }
         out_row++;
         state.current_row++;
     }
 
-    output.SetCardinality(out_row);
+    output.SetChildCardinality(out_row);
 }
 
 // Rough cardinality estimate (planner hint only). Uses input 0's row

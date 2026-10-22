@@ -1760,7 +1760,7 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
     auto &local = data.local_state->Cast<ReadRasterLocalState>();
 
     if (state.finished || state.aborted.load(std::memory_order_acquire)) {
-        output.SetCardinality(0);
+        output.SetChildCardinality(0);
         return;
     }
 
@@ -1878,7 +1878,7 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
 
     // If we emitted rows from native tiles, return them
     if (row_count > 0) {
-        output.SetCardinality(row_count);
+        output.SetChildCardinality(row_count);
         return;
     }
 
@@ -1905,7 +1905,7 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
                         return state.phase1_finished.load(std::memory_order_acquire)
                                >= state.native_tiles.size();
                     })) {
-                    output.SetCardinality(0);
+                    output.SetChildCardinality(0);
                     return;
                 }
                 if (state.overview_frames.empty()) {
@@ -1941,7 +1941,7 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
             } else if (!WaitForPhase(context, state, [&] {
                            return state.phase2_init_done.load(std::memory_order_acquire);
                        })) {
-                output.SetCardinality(0);
+                output.SetChildCardinality(0);
                 return;
             }
         }
@@ -2078,7 +2078,7 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
                             "overview_frames=%zu, staged=%zu, total_blocks=%d)\n",
                             now_ns / 1e9,
                             (now_ns - p2_init) / 1e9,
-                            total_frames,
+                            static_cast<size_t>(total_frames),
                             state.overview_results.size(),
                             state.total_blocks.load());
                         fflush(stderr);
@@ -2107,7 +2107,7 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
                 });
             }
             if (!state.phase2_staged.load(std::memory_order_acquire)) {
-                output.SetCardinality(0);
+                output.SetChildCardinality(0);
                 return;
             }
         }
@@ -2133,7 +2133,7 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
     // If the overview queue still has tiles to drain, leave metadata for a
     // later Execute call.
     if (state.overview_drain_idx.load(std::memory_order_acquire) < overview_total) {
-        output.SetCardinality(row_count);
+        output.SetChildCardinality(row_count);
         return;
     }
 
@@ -2267,7 +2267,7 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
         state.finished = true;
     }
 
-    output.SetCardinality(row_count);
+    output.SetChildCardinality(row_count);
 }
 
 static void ReadRasterExecute(ClientContext &context, TableFunctionInput &data,

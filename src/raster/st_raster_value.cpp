@@ -89,12 +89,12 @@ static bool ExtractPointCoordinates(const string_t &geom, double &x, double &y) 
 // Get a single pixel value from band data by x,y coordinates within the tile
 static void RaquetPixelFunction(DataChunk &args, ExpressionState &state, Vector &result) {
     // Flatten all vectors to ensure consistent access
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
-    args.data[4].Flatten(args.size());
-    args.data[5].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
+    args.data[4].Flatten();
+    args.data[5].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(args.data[0]);
     auto dtype_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -150,11 +150,11 @@ static void RaquetPixelFunction(DataChunk &args, ExpressionState &state, Vector 
 // Decode entire band to array of doubles
 static void RaquetDecodeBandFunction(DataChunk &args, ExpressionState &state, Vector &result) {
     // Flatten all vectors to ensure consistent access
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
-    args.data[4].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
+    args.data[4].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(args.data[0]);
     auto dtype_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -162,7 +162,7 @@ static void RaquetDecodeBandFunction(DataChunk &args, ExpressionState &state, Ve
     auto height_data = FlatVector::GetData<int32_t>(args.data[3]);
     auto compression_data = FlatVector::GetData<string_t>(args.data[4]);
 
-    auto list_data = ListVector::GetData(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
     auto &list_child = ListVector::GetChildMutable(result);
     auto child_data = FlatVector::GetDataMutable<double>(list_child);
 
@@ -228,10 +228,10 @@ static void RaquetDecodeBandFunction(DataChunk &args, ExpressionState &state, Ve
 
 // raquet_pixel(band BLOB, metadata VARCHAR, x INT, y INT) -> DOUBLE
 static void RaquetPixelWithMetadataFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(args.data[0]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -289,11 +289,11 @@ static void RaquetPixelWithMetadataFunction(DataChunk &args, ExpressionState &st
 
 // raquet_pixel(band BLOB, metadata VARCHAR, band_index INT, x INT, y INT) -> DOUBLE
 static void RaquetPixelWithMetadataAndBandFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
-    args.data[4].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
+    args.data[4].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(args.data[0]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -381,10 +381,10 @@ static void RaquetPixelWithMetadataAndBandFunction(DataChunk &args, ExpressionSt
 // ST_RasterValue(block UBIGINT, band BLOB, point GEOMETRY, metadata VARCHAR) -> DOUBLE
 // Get pixel value at point geometry location
 static void STRasterValueWithGeometryFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
 
     auto block_data = FlatVector::GetData<uint64_t>(args.data[0]);
     auto band_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -469,11 +469,11 @@ static void STRasterValueWithGeometryFunction(DataChunk &args, ExpressionState &
 // Get pixel value at point geometry with band name (for multi-band rasters)
 // Auto-detects interleaved vs sequential layout from metadata
 static void STRasterValueWithGeometryAndBandNameFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
-    args.data[4].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
+    args.data[4].Flatten();
 
     auto block_data = FlatVector::GetData<uint64_t>(args.data[0]);
     auto band_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -571,11 +571,11 @@ static void STRasterValueWithGeometryAndBandNameFunction(DataChunk &args, Expres
 // raquet_pixel_interleaved(pixels BLOB, metadata VARCHAR, band_index INT, x INT, y INT) -> DOUBLE
 // Get a pixel value from interleaved (BIP) layout data
 static void RaquetPixelInterleavedFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
-    args.data[4].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
+    args.data[4].Flatten();
 
     auto pixels_data = FlatVector::GetData<string_t>(args.data[0]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[1]);
