@@ -2,6 +2,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
+#include "duckdb/common/vector/list_vector.hpp"
 #include "band_decoder.hpp"
 #include "quadbin.hpp"
 #include <cmath>
@@ -329,7 +330,7 @@ static void STClipFunction(DataChunk &args, ExpressionState &state, Vector &resu
 
 
     auto list_data = ListVector::GetData(result);
-    auto &list_child = ListVector::GetEntry(result);
+    auto &list_child = ListVector::GetChildMutable(result);
 
     idx_t total_list_size = 0;
 
@@ -337,7 +338,7 @@ static void STClipFunction(DataChunk &args, ExpressionState &state, Vector &resu
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -349,7 +350,7 @@ static void STClipFunction(DataChunk &args, ExpressionState &state, Vector &resu
         if (band.GetSize() == 0) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -433,7 +434,7 @@ static void STClipFunction(DataChunk &args, ExpressionState &state, Vector &resu
 
             // Write to result list
             ListVector::Reserve(result, total_list_size + clipped_values.size());
-            auto child_data = FlatVector::GetData<double>(ListVector::GetEntry(result));
+            auto child_data = FlatVector::GetDataMutable<double>(ListVector::GetChildMutable(result));
 
             for (size_t j = 0; j < clipped_values.size(); j++) {
                 child_data[total_list_size + j] = clipped_values[j];
@@ -446,7 +447,7 @@ static void STClipFunction(DataChunk &args, ExpressionState &state, Vector &resu
         } catch (const std::exception &e) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
         }
     }
 
@@ -480,7 +481,7 @@ static void STClipNodataFunction(DataChunk &args, ExpressionState &state, Vector
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -493,7 +494,7 @@ static void STClipNodataFunction(DataChunk &args, ExpressionState &state, Vector
         if (band.GetSize() == 0) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -571,7 +572,7 @@ static void STClipNodataFunction(DataChunk &args, ExpressionState &state, Vector
             }
 
             ListVector::Reserve(result, total_list_size + clipped_values.size());
-            auto child_data = FlatVector::GetData<double>(ListVector::GetEntry(result));
+            auto child_data = FlatVector::GetDataMutable<double>(ListVector::GetChildMutable(result));
 
             for (size_t j = 0; j < clipped_values.size(); j++) {
                 child_data[total_list_size + j] = clipped_values[j];
@@ -584,7 +585,7 @@ static void STClipNodataFunction(DataChunk &args, ExpressionState &state, Vector
         } catch (const std::exception &e) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
         }
     }
 
@@ -618,7 +619,7 @@ static void STClipMaskFunction(DataChunk &args, ExpressionState &state, Vector &
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -631,7 +632,7 @@ static void STClipMaskFunction(DataChunk &args, ExpressionState &state, Vector &
         if (band.GetSize() == 0) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -675,7 +676,7 @@ static void STClipMaskFunction(DataChunk &args, ExpressionState &state, Vector &
 
             // Reserve space for full tile
             ListVector::Reserve(result, total_list_size + num_pixels);
-            auto child_data = FlatVector::GetData<double>(ListVector::GetEntry(result));
+            auto child_data = FlatVector::GetDataMutable<double>(ListVector::GetChildMutable(result));
 
             // Check if tile is completely outside clip geometry
             bool tile_outside = has_clip_bbox && (
@@ -717,7 +718,7 @@ static void STClipMaskFunction(DataChunk &args, ExpressionState &state, Vector &
         } catch (const std::exception &e) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
         }
     }
 
@@ -735,6 +736,7 @@ void RegisterClipFunctions(ExtensionLoader &loader) {
         {LogicalType::BLOB, LogicalType::UBIGINT, LogicalType::GEOMETRY(), LogicalType::VARCHAR},
         LogicalType::LIST(LogicalType::DOUBLE),
         STClipFunction);
+    clip_fn.SetFallible();
     loader.RegisterFunction(clip_fn);
 
     // ST_Clip(band, block, clip_geometry, metadata, nodata) -> DOUBLE[]
@@ -743,6 +745,7 @@ void RegisterClipFunctions(ExtensionLoader &loader) {
         {LogicalType::BLOB, LogicalType::UBIGINT, LogicalType::GEOMETRY(), LogicalType::VARCHAR, LogicalType::DOUBLE},
         LogicalType::LIST(LogicalType::DOUBLE),
         STClipNodataFunction);
+    clip_nodata_fn.SetFallible();
     loader.RegisterFunction(clip_nodata_fn);
 
     // ST_ClipMask(band, block, clip_geometry, metadata, nodata_value) -> DOUBLE[]
@@ -751,6 +754,7 @@ void RegisterClipFunctions(ExtensionLoader &loader) {
         {LogicalType::BLOB, LogicalType::UBIGINT, LogicalType::GEOMETRY(), LogicalType::VARCHAR, LogicalType::DOUBLE},
         LogicalType::LIST(LogicalType::DOUBLE),
         STClipMaskFunction);
+    clip_mask_fn.SetFallible();
     loader.RegisterFunction(clip_mask_fn);
 }
 

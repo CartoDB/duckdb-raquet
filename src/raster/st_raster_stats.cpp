@@ -2,6 +2,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
+#include "duckdb/common/vector/struct_vector.hpp"
 #include "band_decoder.hpp"
 #include "raquet_metadata.hpp"
 #include "quadbin.hpp"
@@ -35,17 +36,17 @@ static void STRasterSummaryStatsFunction(DataChunk &args, ExpressionState &state
     auto compression_data = FlatVector::GetData<string_t>(compression_vec);
     auto nodata_data = FlatVector::GetData<double>(nodata_vec);
 
-    auto &nodata_validity = FlatVector::Validity(nodata_vec);
+    auto &nodata_validity = FlatVector::ValidityMutable(nodata_vec);
 
     auto &struct_entries = StructVector::GetEntries(result);
-    auto count_data = FlatVector::GetData<int64_t>(*struct_entries[0]);
-    auto sum_data = FlatVector::GetData<double>(*struct_entries[1]);
-    auto mean_data = FlatVector::GetData<double>(*struct_entries[2]);
-    auto min_data = FlatVector::GetData<double>(*struct_entries[3]);
-    auto max_data = FlatVector::GetData<double>(*struct_entries[4]);
-    auto stddev_data = FlatVector::GetData<double>(*struct_entries[5]);
+    auto count_data = FlatVector::GetDataMutable<int64_t>(struct_entries[0]);
+    auto sum_data = FlatVector::GetDataMutable<double>(struct_entries[1]);
+    auto mean_data = FlatVector::GetDataMutable<double>(struct_entries[2]);
+    auto min_data = FlatVector::GetDataMutable<double>(struct_entries[3]);
+    auto max_data = FlatVector::GetDataMutable<double>(struct_entries[4]);
+    auto stddev_data = FlatVector::GetDataMutable<double>(struct_entries[5]);
 
-    auto &result_validity = FlatVector::Validity(result);
+    auto &result_validity = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         // Check for NULL band data
@@ -117,14 +118,14 @@ static void STRasterSummaryStatsSimpleFunction(DataChunk &args, ExpressionState 
 
 
     auto &struct_entries = StructVector::GetEntries(result);
-    auto count_data = FlatVector::GetData<int64_t>(*struct_entries[0]);
-    auto sum_data = FlatVector::GetData<double>(*struct_entries[1]);
-    auto mean_data = FlatVector::GetData<double>(*struct_entries[2]);
-    auto min_data = FlatVector::GetData<double>(*struct_entries[3]);
-    auto max_data = FlatVector::GetData<double>(*struct_entries[4]);
-    auto stddev_data = FlatVector::GetData<double>(*struct_entries[5]);
+    auto count_data = FlatVector::GetDataMutable<int64_t>(struct_entries[0]);
+    auto sum_data = FlatVector::GetDataMutable<double>(struct_entries[1]);
+    auto mean_data = FlatVector::GetDataMutable<double>(struct_entries[2]);
+    auto min_data = FlatVector::GetDataMutable<double>(struct_entries[3]);
+    auto max_data = FlatVector::GetDataMutable<double>(struct_entries[4]);
+    auto stddev_data = FlatVector::GetDataMutable<double>(struct_entries[5]);
 
-    auto &result_validity = FlatVector::Validity(result);
+    auto &result_validity = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         // Check for NULL band data
@@ -185,14 +186,14 @@ static void STRasterSummaryStatsMetadataFunction(DataChunk &args, ExpressionStat
 
 
     auto &struct_entries = StructVector::GetEntries(result);
-    auto count_data = FlatVector::GetData<int64_t>(*struct_entries[0]);
-    auto sum_data = FlatVector::GetData<double>(*struct_entries[1]);
-    auto mean_data = FlatVector::GetData<double>(*struct_entries[2]);
-    auto min_data = FlatVector::GetData<double>(*struct_entries[3]);
-    auto max_data = FlatVector::GetData<double>(*struct_entries[4]);
-    auto stddev_data = FlatVector::GetData<double>(*struct_entries[5]);
+    auto count_data = FlatVector::GetDataMutable<int64_t>(struct_entries[0]);
+    auto sum_data = FlatVector::GetDataMutable<double>(struct_entries[1]);
+    auto mean_data = FlatVector::GetDataMutable<double>(struct_entries[2]);
+    auto min_data = FlatVector::GetDataMutable<double>(struct_entries[3]);
+    auto max_data = FlatVector::GetDataMutable<double>(struct_entries[4]);
+    auto stddev_data = FlatVector::GetDataMutable<double>(struct_entries[5]);
 
-    auto &result_validity = FlatVector::Validity(result);
+    auto &result_validity = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
@@ -250,14 +251,14 @@ static void STRasterSummaryStatsMetadataNodataFunction(DataChunk &args, Expressi
     auto &nodata_validity = FlatVector::Validity(args.data[2]);
 
     auto &struct_entries = StructVector::GetEntries(result);
-    auto count_data = FlatVector::GetData<int64_t>(*struct_entries[0]);
-    auto sum_data = FlatVector::GetData<double>(*struct_entries[1]);
-    auto mean_data = FlatVector::GetData<double>(*struct_entries[2]);
-    auto min_data = FlatVector::GetData<double>(*struct_entries[3]);
-    auto max_data = FlatVector::GetData<double>(*struct_entries[4]);
-    auto stddev_data = FlatVector::GetData<double>(*struct_entries[5]);
+    auto count_data = FlatVector::GetDataMutable<int64_t>(struct_entries[0]);
+    auto sum_data = FlatVector::GetDataMutable<double>(struct_entries[1]);
+    auto mean_data = FlatVector::GetDataMutable<double>(struct_entries[2]);
+    auto min_data = FlatVector::GetDataMutable<double>(struct_entries[3]);
+    auto max_data = FlatVector::GetDataMutable<double>(struct_entries[4]);
+    auto stddev_data = FlatVector::GetDataMutable<double>(struct_entries[5]);
 
-    auto &result_validity = FlatVector::Validity(result);
+    auto &result_validity = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i, 2)) {
@@ -321,13 +322,13 @@ static void STRasterSummaryStatsPrecomputedFunction(DataChunk &args, ExpressionS
     auto &count_validity = FlatVector::Validity(args.data[0]);
 
     auto &struct_entries = StructVector::GetEntries(result);
-    auto out_count = FlatVector::GetData<int64_t>(*struct_entries[0]);
-    auto out_sum = FlatVector::GetData<double>(*struct_entries[1]);
-    auto out_mean = FlatVector::GetData<double>(*struct_entries[2]);
-    auto out_min = FlatVector::GetData<double>(*struct_entries[3]);
-    auto out_max = FlatVector::GetData<double>(*struct_entries[4]);
-    auto out_stddev = FlatVector::GetData<double>(*struct_entries[5]);
-    auto &result_validity = FlatVector::Validity(result);
+    auto out_count = FlatVector::GetDataMutable<int64_t>(struct_entries[0]);
+    auto out_sum = FlatVector::GetDataMutable<double>(struct_entries[1]);
+    auto out_mean = FlatVector::GetDataMutable<double>(struct_entries[2]);
+    auto out_min = FlatVector::GetDataMutable<double>(struct_entries[3]);
+    auto out_max = FlatVector::GetDataMutable<double>(struct_entries[4]);
+    auto out_stddev = FlatVector::GetDataMutable<double>(struct_entries[5]);
+    auto &result_validity = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (!count_validity.RowIsValid(i)) {
@@ -362,6 +363,7 @@ void RegisterRasterStatsFunctions(ExtensionLoader &loader) {
          LogicalType::INTEGER, LogicalType::VARCHAR, LogicalType::DOUBLE},
         stats_type,
         STRasterSummaryStatsFunction);
+    stats_fn.SetFallible();
     loader.RegisterFunction(stats_fn);
 
     // ST_RasterSummaryStats without nodata
@@ -370,6 +372,7 @@ void RegisterRasterStatsFunctions(ExtensionLoader &loader) {
          LogicalType::INTEGER, LogicalType::VARCHAR},
         stats_type,
         STRasterSummaryStatsSimpleFunction);
+    stats_simple_fn.SetFallible();
     loader.RegisterFunction(stats_simple_fn);
 
     // ST_RasterSummaryStats(band, metadata) -> STRUCT
@@ -378,6 +381,7 @@ void RegisterRasterStatsFunctions(ExtensionLoader &loader) {
         {LogicalType::BLOB, LogicalType::VARCHAR},
         stats_type,
         STRasterSummaryStatsMetadataFunction);
+    stats_meta_fn.SetFallible();
     loader.RegisterFunction(stats_meta_fn);
 
     // ST_RasterSummaryStats(band, metadata, nodata) -> STRUCT
@@ -386,6 +390,7 @@ void RegisterRasterStatsFunctions(ExtensionLoader &loader) {
         {LogicalType::BLOB, LogicalType::VARCHAR, LogicalType::DOUBLE},
         stats_type,
         STRasterSummaryStatsMetadataNodataFunction);
+    stats_meta_nodata_fn.SetFallible();
     loader.RegisterFunction(stats_meta_nodata_fn);
 
     // v0.5.0: ST_RasterSummaryStats(count, sum, mean, min, max, stddev) -> STRUCT
@@ -395,6 +400,7 @@ void RegisterRasterStatsFunctions(ExtensionLoader &loader) {
          LogicalType::DOUBLE, LogicalType::DOUBLE, LogicalType::DOUBLE},
         stats_type,
         STRasterSummaryStatsPrecomputedFunction);
+    stats_precomputed_fn.SetFallible();
     loader.RegisterFunction(stats_precomputed_fn);
 }
 

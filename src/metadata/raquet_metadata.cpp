@@ -2,6 +2,7 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/common/vector_operations/generic_executor.hpp"
+#include "duckdb/common/vector/struct_vector.hpp"
 #include "raquet_metadata.hpp"
 #include "band_decoder.hpp"
 #include "quadbin.hpp"
@@ -18,12 +19,12 @@ static void RaquetValidateMetadataFunction(DataChunk &args, ExpressionState &sta
     auto count = args.size();
 
     auto &entries = StructVector::GetEntries(result);
-    auto &is_valid_vec = *entries[0];
-    auto &errors_vec = *entries[1];
-    auto &warnings_vec = *entries[2];
-    auto &num_blocks_vec = *entries[3];
-    auto &num_bands_vec = *entries[4];
-    auto &zoom_range_vec = *entries[5];
+    auto &is_valid_vec = entries[0];
+    auto &errors_vec = entries[1];
+    auto &warnings_vec = entries[2];
+    auto &num_blocks_vec = entries[3];
+    auto &num_bands_vec = entries[4];
+    auto &zoom_range_vec = entries[5];
 
     for (idx_t i = 0; i < count; i++) {
         auto json_val = input.GetValue(i);
@@ -112,7 +113,7 @@ static void RaquetValidateMetadataFunction(DataChunk &args, ExpressionState &sta
             }
         }
 
-        FlatVector::GetData<bool>(is_valid_vec)[i] = valid;
+        FlatVector::GetDataMutable<bool>(is_valid_vec)[i] = valid;
 
         // Build error/warning lists
         vector<Value> err_vals, warn_vals;
@@ -126,8 +127,8 @@ static void RaquetValidateMetadataFunction(DataChunk &args, ExpressionState &sta
             ? Value::LIST(LogicalType::VARCHAR, vector<Value>())
             : Value::LIST(LogicalType::VARCHAR, warn_vals));
 
-        FlatVector::GetData<int32_t>(num_blocks_vec)[i] = meta.num_blocks;
-        FlatVector::GetData<int32_t>(num_bands_vec)[i] = static_cast<int>(meta.bands.size());
+        FlatVector::GetDataMutable<int32_t>(num_blocks_vec)[i] = meta.num_blocks;
+        FlatVector::GetDataMutable<int32_t>(num_bands_vec)[i] = static_cast<int>(meta.bands.size());
         zoom_range_vec.SetValue(i, Value(std::to_string(meta.min_zoom) + "-" + std::to_string(meta.max_zoom)));
     }
 }
@@ -146,6 +147,7 @@ void RegisterMetadataFunctions(ExtensionLoader &loader) {
     // raquet_validate_metadata(json VARCHAR) → STRUCT
     ScalarFunction validate_meta_fn("raquet_validate_metadata", {LogicalType::VARCHAR},
                                      validate_type, RaquetValidateMetadataFunction);
+    validate_meta_fn.SetFallible();
     loader.RegisterFunction(validate_meta_fn);
 }
 

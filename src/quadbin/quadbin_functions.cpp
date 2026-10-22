@@ -3,6 +3,8 @@
 #include "duckdb/common/vector_operations/generic_executor.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
+#include "duckdb/common/vector/list_vector.hpp"
+#include "duckdb/common/vector/struct_vector.hpp"
 #include "quadbin.hpp"
 #include "vector_args.hpp"
 #include <sstream>
@@ -310,9 +312,9 @@ static void QuadbinToTileFunction(DataChunk &args, ExpressionState &state, Vecto
 
     // Result is a struct with x, y, z fields
     auto &struct_entries = StructVector::GetEntries(result);
-    auto &x_result = *struct_entries[0];
-    auto &y_result = *struct_entries[1];
-    auto &z_result = *struct_entries[2];
+    auto &x_result = struct_entries[0];
+    auto &y_result = struct_entries[1];
+    auto &z_result = struct_entries[2];
 
     UnaryExecutor::Execute<uint64_t, int32_t>(cell_vec, x_result, args.size(),
         [](uint64_t cell) {
@@ -356,8 +358,8 @@ static void QuadbinToLonLatFunction(DataChunk &args, ExpressionState &state, Vec
     auto &cell_vec = args.data[0];
 
     auto &struct_entries = StructVector::GetEntries(result);
-    auto &lon_result = *struct_entries[0];
-    auto &lat_result = *struct_entries[1];
+    auto &lon_result = struct_entries[0];
+    auto &lat_result = struct_entries[1];
 
     UnaryExecutor::Execute<uint64_t, double>(cell_vec, lon_result, args.size(),
         [](uint64_t cell) {
@@ -392,16 +394,16 @@ static void QuadbinToBboxFunction(DataChunk &args, ExpressionState &state, Vecto
     cell_vec.Flatten(args.size());  // Ensure vector is flat before accessing
 
     auto &struct_entries = StructVector::GetEntries(result);
-    auto &min_lon_result = *struct_entries[0];
-    auto &min_lat_result = *struct_entries[1];
-    auto &max_lon_result = *struct_entries[2];
-    auto &max_lat_result = *struct_entries[3];
+    auto &min_lon_result = struct_entries[0];
+    auto &min_lat_result = struct_entries[1];
+    auto &max_lon_result = struct_entries[2];
+    auto &max_lat_result = struct_entries[3];
 
     auto cell_data = FlatVector::GetData<uint64_t>(cell_vec);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
         auto cell = cell_data[i];
@@ -412,10 +414,10 @@ static void QuadbinToBboxFunction(DataChunk &args, ExpressionState &state, Vecto
         double min_lon, min_lat, max_lon, max_lat;
         quadbin::tile_to_bbox_wgs84(x, y, z, min_lon, min_lat, max_lon, max_lat);
 
-        FlatVector::GetData<double>(min_lon_result)[i] = min_lon;
-        FlatVector::GetData<double>(min_lat_result)[i] = min_lat;
-        FlatVector::GetData<double>(max_lon_result)[i] = max_lon;
-        FlatVector::GetData<double>(max_lat_result)[i] = max_lat;
+        FlatVector::GetDataMutable<double>(min_lon_result)[i] = min_lon;
+        FlatVector::GetDataMutable<double>(min_lat_result)[i] = min_lat;
+        FlatVector::GetDataMutable<double>(max_lon_result)[i] = max_lon;
+        FlatVector::GetDataMutable<double>(max_lat_result)[i] = max_lat;
     }
 
     result.SetVectorType(VectorType::FLAT_VECTOR);
@@ -430,12 +432,12 @@ static void QuadbinPixelXYFunction(DataChunk &args, ExpressionState &state, Vect
     auto &size_vec = args.data[3];
 
     auto &struct_entries = StructVector::GetEntries(result);
-    auto &px_result = *struct_entries[0];
-    auto &py_result = *struct_entries[1];
+    auto &px_result = struct_entries[0];
+    auto &py_result = struct_entries[1];
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
         auto lon = FlatVector::GetData<double>(lon_vec)[i];
@@ -446,8 +448,8 @@ static void QuadbinPixelXYFunction(DataChunk &args, ExpressionState &state, Vect
         int pixel_x, pixel_y, tile_x, tile_y;
         quadbin::lonlat_to_pixel(lon, lat, resolution, tile_size, pixel_x, pixel_y, tile_x, tile_y);
 
-        FlatVector::GetData<int32_t>(px_result)[i] = pixel_x;
-        FlatVector::GetData<int32_t>(py_result)[i] = pixel_y;
+        FlatVector::GetDataMutable<int32_t>(px_result)[i] = pixel_x;
+        FlatVector::GetDataMutable<int32_t>(py_result)[i] = pixel_y;
     }
 
     result.SetVectorType(VectorType::FLAT_VECTOR);
@@ -470,11 +472,11 @@ static void STIntersectsFunction(DataChunk &args, ExpressionState &state, Vector
 
     auto cell_data = FlatVector::GetData<uint64_t>(args.data[0]);
     auto geom_data = FlatVector::GetData<string_t>(args.data[1]);
-    auto result_data = FlatVector::GetData<bool>(result);
+    auto result_data = FlatVector::GetDataMutable<bool>(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
         auto cell = cell_data[i];
@@ -511,11 +513,11 @@ static void STContainsFunction(DataChunk &args, ExpressionState &state, Vector &
 
     auto geom_data = FlatVector::GetData<string_t>(args.data[0]);
     auto cell_data = FlatVector::GetData<uint64_t>(args.data[1]);
-    auto result_data = FlatVector::GetData<bool>(result);
+    auto result_data = FlatVector::GetDataMutable<bool>(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
         auto geom = geom_data[i];
@@ -641,15 +643,15 @@ static void QuadbinToChildrenFunction(DataChunk &args, ExpressionState &state, V
     auto list_size = args.size();
 
     // Result is a list of UBIGINT
-    auto &list_entries = ListVector::GetEntry(result);
-    auto list_data = FlatVector::GetData<list_entry_t>(result);
+    auto &list_entries = ListVector::GetChildMutable(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
 
     idx_t total_children = 0;
     for (idx_t i = 0; i < list_size; i++) {
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_children;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
         auto cell = FlatVector::GetData<uint64_t>(cell_vec)[i];
@@ -661,7 +663,7 @@ static void QuadbinToChildrenFunction(DataChunk &args, ExpressionState &state, V
         list_data[i].length = 4;
 
         ListVector::Reserve(result, total_children + 4);
-        auto child_data = FlatVector::GetData<uint64_t>(list_entries);
+        auto child_data = FlatVector::GetDataMutable<uint64_t>(list_entries);
         for (int j = 0; j < 4; j++) {
             child_data[total_children + j] = children[j];
         }
@@ -678,15 +680,15 @@ static void QuadbinToChildrenResFunction(DataChunk &args, ExpressionState &state
     auto &res_vec = args.data[1];
     auto list_size = args.size();
 
-    auto &list_entries = ListVector::GetEntry(result);
-    auto list_data = FlatVector::GetData<list_entry_t>(result);
+    auto &list_entries = ListVector::GetChildMutable(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
 
     idx_t total_children = 0;
     for (idx_t i = 0; i < list_size; i++) {
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_children;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
         auto cell = FlatVector::GetData<uint64_t>(cell_vec)[i];
@@ -711,7 +713,7 @@ static void QuadbinToChildrenResFunction(DataChunk &args, ExpressionState &state
         list_data[i].length = count;
 
         ListVector::Reserve(result, total_children + count);
-        auto child_data = FlatVector::GetData<uint64_t>(list_entries);
+        auto child_data = FlatVector::GetDataMutable<uint64_t>(list_entries);
         for (int j = 0; j < count; j++) {
             child_data[total_children + j] = children[j];
         }
@@ -727,15 +729,15 @@ static void QuadbinSiblingFunction(DataChunk &args, ExpressionState &state, Vect
     auto &cell_vec = args.data[0];
     auto list_size = args.size();
 
-    auto &list_entries = ListVector::GetEntry(result);
-    auto list_data = FlatVector::GetData<list_entry_t>(result);
+    auto &list_entries = ListVector::GetChildMutable(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
 
     idx_t total_siblings = 0;
     for (idx_t i = 0; i < list_size; i++) {
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_siblings;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
         auto cell = FlatVector::GetData<uint64_t>(cell_vec)[i];
@@ -747,7 +749,7 @@ static void QuadbinSiblingFunction(DataChunk &args, ExpressionState &state, Vect
         list_data[i].length = 4;
 
         ListVector::Reserve(result, total_siblings + 4);
-        auto sibling_data = FlatVector::GetData<uint64_t>(list_entries);
+        auto sibling_data = FlatVector::GetDataMutable<uint64_t>(list_entries);
         for (int j = 0; j < 4; j++) {
             sibling_data[total_siblings + j] = siblings[j];
         }
@@ -821,15 +823,15 @@ static void QuadbinKringFunction(DataChunk &args, ExpressionState &state, Vector
     auto &k_vec = args.data[1];
     auto list_size = args.size();
 
-    auto &list_entries = ListVector::GetEntry(result);
-    auto list_data = FlatVector::GetData<list_entry_t>(result);
+    auto &list_entries = ListVector::GetChildMutable(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
 
     idx_t total_neighbors = 0;
     for (idx_t i = 0; i < list_size; i++) {
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_neighbors;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
         auto cell = FlatVector::GetData<uint64_t>(cell_vec)[i];
@@ -851,7 +853,7 @@ static void QuadbinKringFunction(DataChunk &args, ExpressionState &state, Vector
         list_data[i].length = count;
 
         ListVector::Reserve(result, total_neighbors + count);
-        auto neighbor_data = FlatVector::GetData<uint64_t>(list_entries);
+        auto neighbor_data = FlatVector::GetDataMutable<uint64_t>(list_entries);
         for (int j = 0; j < count; j++) {
             neighbor_data[total_neighbors + j] = neighbors[j];
         }
@@ -874,7 +876,7 @@ static void STPointFunction(DataChunk &args, ExpressionState &state, Vector &res
 
     auto lon_data = FlatVector::GetData<double>(lon_vec);
     auto lat_data = FlatVector::GetData<double>(lat_vec);
-    auto result_data = FlatVector::GetData<string_t>(result);
+    auto result_data = FlatVector::GetDataMutable<string_t>(result);
 
     // WKB POINT format: byte_order(1) + type(4) + x(8) + y(8) = 21 bytes
     uint8_t wkb[21];
@@ -884,7 +886,7 @@ static void STPointFunction(DataChunk &args, ExpressionState &state, Vector &res
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
         double lon = lon_data[i];
@@ -902,8 +904,8 @@ static void STXFunction(DataChunk &args, ExpressionState &state, Vector &result)
     geom_vec.Flatten(args.size());
 
     auto geom_data = FlatVector::GetData<string_t>(geom_vec);
-    auto result_data = FlatVector::GetData<double>(result);
-    auto &result_mask = FlatVector::Validity(result);
+    auto result_data = FlatVector::GetDataMutable<double>(result);
+    auto &result_mask = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
@@ -943,8 +945,8 @@ static void STYFunction(DataChunk &args, ExpressionState &state, Vector &result)
     geom_vec.Flatten(args.size());
 
     auto geom_data = FlatVector::GetData<string_t>(geom_vec);
-    auto result_data = FlatVector::GetData<double>(result);
-    auto &result_mask = FlatVector::Validity(result);
+    auto result_data = FlatVector::GetDataMutable<double>(result);
+    auto &result_mask = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
@@ -983,6 +985,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::INTEGER},
         LogicalType::UBIGINT,
         QuadbinFromTileFunction);
+    from_tile.SetFallible();
     loader.RegisterFunction(from_tile);
 
     // quadbin_to_tile(cell) -> STRUCT
@@ -995,6 +998,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT},
         LogicalType::STRUCT(tile_struct),
         QuadbinToTileFunction);
+    to_tile.SetFallible();
     loader.RegisterFunction(to_tile);
 
     // quadbin_from_lonlat(lon, lat, resolution) -> UBIGINT
@@ -1002,6 +1006,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::DOUBLE, LogicalType::DOUBLE, LogicalType::INTEGER},
         LogicalType::UBIGINT,
         QuadbinFromLonLatFunction);
+    from_lonlat.SetFallible();
     loader.RegisterFunction(from_lonlat);
 
     // quadbin_to_lonlat(cell) -> STRUCT
@@ -1013,6 +1018,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT},
         LogicalType::STRUCT(lonlat_struct),
         QuadbinToLonLatFunction);
+    to_lonlat.SetFallible();
     loader.RegisterFunction(to_lonlat);
 
     // quadbin_resolution(cell) -> INT
@@ -1020,6 +1026,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT},
         LogicalType::INTEGER,
         QuadbinResolutionFunction);
+    resolution.SetFallible();
     loader.RegisterFunction(resolution);
 
     // quadbin_to_bbox(cell) -> STRUCT(min_lon, min_lat, max_lon, max_lat)
@@ -1033,6 +1040,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT},
         LogicalType::STRUCT(bbox_struct),
         QuadbinToBboxFunction);
+    to_bbox.SetFallible();
     loader.RegisterFunction(to_bbox);
 
     // quadbin_pixel_xy(lon, lat, resolution, tile_size) -> STRUCT(pixel_x, pixel_y)
@@ -1044,6 +1052,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::DOUBLE, LogicalType::DOUBLE, LogicalType::INTEGER, LogicalType::INTEGER},
         LogicalType::STRUCT(pixel_struct),
         QuadbinPixelXYFunction);
+    pixel_xy.SetFallible();
     loader.RegisterFunction(pixel_xy);
 
     // ========================================================================
@@ -1060,6 +1069,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT, LogicalType::GEOMETRY()},
         LogicalType::BOOLEAN,
         STIntersectsFunction);
+    st_intersects.SetFallible();
     loader.RegisterFunction(st_intersects);
 
     // ST_Contains(geometry, block) -> BOOLEAN
@@ -1068,6 +1078,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::GEOMETRY(), LogicalType::UBIGINT},
         LogicalType::BOOLEAN,
         STContainsFunction);
+    st_contains.SetFallible();
     loader.RegisterFunction(st_contains);
 
     // ========================================================================
@@ -1080,6 +1091,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT},
         LogicalType::VARCHAR,
         QuadbinToWktFunction);
+    to_wkt.SetFallible();
     loader.RegisterFunction(to_wkt);
 
     // quadbin_to_geojson(cell) -> VARCHAR
@@ -1088,6 +1100,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT},
         LogicalType::VARCHAR,
         QuadbinToGeojsonFunction);
+    to_geojson.SetFallible();
     loader.RegisterFunction(to_geojson);
 
     // ========================================================================
@@ -1100,6 +1113,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT},
         LogicalType::UBIGINT,
         QuadbinToParentFunction);
+    to_parent.SetFallible();
     loader.RegisterFunction(to_parent);
 
     // quadbin_to_parent(cell, resolution) -> UBIGINT
@@ -1113,6 +1127,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT, LogicalType::INTEGER},
         LogicalType::UBIGINT,
         QuadbinToParentResFunction));
+    to_parent_set.SetFallible();
     loader.RegisterFunction(to_parent_set);
 
     // quadbin_to_children(cell) -> LIST(UBIGINT)
@@ -1126,6 +1141,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT, LogicalType::INTEGER},
         LogicalType::LIST(LogicalType::UBIGINT),
         QuadbinToChildrenResFunction));
+    to_children_set.SetFallible();
     loader.RegisterFunction(to_children_set);
 
     // quadbin_sibling(cell) -> LIST(UBIGINT)
@@ -1134,6 +1150,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT},
         LogicalType::LIST(LogicalType::UBIGINT),
         QuadbinSiblingFunction);
+    sibling.SetFallible();
     loader.RegisterFunction(sibling);
 
     // quadbin_kring(cell, k) -> LIST(UBIGINT)
@@ -1142,6 +1159,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT, LogicalType::INTEGER},
         LogicalType::LIST(LogicalType::UBIGINT),
         QuadbinKringFunction);
+    kring.SetFallible();
     loader.RegisterFunction(kring);
 
     // ========================================================================
@@ -1154,6 +1172,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::UBIGINT},
         LogicalType::GEOMETRY(),
         STGeomFromQuadbinFunction);
+    geom_from_quadbin.SetFallible();
     loader.RegisterFunction(geom_from_quadbin);
 
     // ========================================================================
@@ -1166,6 +1185,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::DOUBLE, LogicalType::DOUBLE},
         LogicalType::GEOMETRY(),
         STPointFunction);
+    st_point.SetFallible();
     loader.RegisterFunction(st_point);
 
     // ST_X(geometry) -> DOUBLE
@@ -1174,6 +1194,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::GEOMETRY()},
         LogicalType::DOUBLE,
         STXFunction);
+    st_x.SetFallible();
     loader.RegisterFunction(st_x);
 
     // ST_Y(geometry) -> DOUBLE
@@ -1182,6 +1203,7 @@ void RegisterQuadbinFunctions(ExtensionLoader &loader) {
         {LogicalType::GEOMETRY()},
         LogicalType::DOUBLE,
         STYFunction);
+    st_y.SetFallible();
     loader.RegisterFunction(st_y);
 }
 
