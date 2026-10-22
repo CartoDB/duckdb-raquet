@@ -40,16 +40,16 @@ static const uint8_t* DecodeBandData(const string_t &band, bool compressed,
 // ============================================================================
 
 static void STNormalizedDifferenceFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
 
     auto band1_data = FlatVector::GetData<string_t>(args.data[0]);
     auto band2_data = FlatVector::GetData<string_t>(args.data[1]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[2]);
 
 
-    auto list_data = ListVector::GetData(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
     auto &list_child = ListVector::GetChildMutable(result);
     auto child_data = FlatVector::GetDataMutable<double>(list_child);
 
@@ -134,10 +134,10 @@ static void STNormalizedDifferenceFunction(DataChunk &args, ExpressionState &sta
 // ============================================================================
 
 static void STNormalizedDifferenceNodataFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
 
     auto band1_data = FlatVector::GetData<string_t>(args.data[0]);
     auto band2_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -145,7 +145,7 @@ static void STNormalizedDifferenceNodataFunction(DataChunk &args, ExpressionStat
     auto nodata_data = FlatVector::GetData<double>(args.data[3]);
 
 
-    auto list_data = ListVector::GetData(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
     auto &list_child = ListVector::GetChildMutable(result);
     auto child_data = FlatVector::GetDataMutable<double>(list_child);
 
@@ -233,10 +233,10 @@ static void STNormalizedDifferenceNodataFunction(DataChunk &args, ExpressionStat
 // ============================================================================
 
 static void STBandMathFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
 
     auto band1_data = FlatVector::GetData<string_t>(args.data[0]);
     auto band2_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -244,7 +244,7 @@ static void STBandMathFunction(DataChunk &args, ExpressionState &state, Vector &
     auto metadata_data = FlatVector::GetData<string_t>(args.data[3]);
 
 
-    auto list_data = ListVector::GetData(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
     auto &list_child = ListVector::GetChildMutable(result);
     auto child_data = FlatVector::GetDataMutable<double>(list_child);
 
@@ -352,9 +352,9 @@ static void STBandMathFunction(DataChunk &args, ExpressionState &state, Vector &
 // ============================================================================
 
 static void STNormalizedDifferenceStatsFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
 
     auto band1_data = FlatVector::GetData<string_t>(args.data[0]);
     auto band2_data = FlatVector::GetData<string_t>(args.data[1]);

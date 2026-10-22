@@ -300,7 +300,7 @@ static void QuadbinFromTileFunction(DataChunk &args, ExpressionState &state, Vec
     auto &z_vec = args.data[2];
 
     TernaryExecutor::Execute<int32_t, int32_t, int32_t, uint64_t>(
-        x_vec, y_vec, z_vec, result, args.size(),
+        x_vec, y_vec, z_vec, result,
         [&](int32_t x, int32_t y, int32_t z) {
             return quadbin::tile_to_cell(x, y, z);
         });
@@ -347,7 +347,7 @@ static void QuadbinFromLonLatFunction(DataChunk &args, ExpressionState &state, V
     auto &res_vec = args.data[2];
 
     TernaryExecutor::Execute<double, double, int32_t, uint64_t>(
-        lon_vec, lat_vec, res_vec, result, args.size(),
+        lon_vec, lat_vec, res_vec, result,
         [](double lon, double lat, int32_t resolution) {
             return quadbin::lonlat_to_cell(lon, lat, resolution);
         });
@@ -391,7 +391,7 @@ static void QuadbinResolutionFunction(DataChunk &args, ExpressionState &state, V
 // quadbin_to_bbox(cell) -> STRUCT(min_lon DOUBLE, min_lat DOUBLE, max_lon DOUBLE, max_lat DOUBLE)
 static void QuadbinToBboxFunction(DataChunk &args, ExpressionState &state, Vector &result) {
     auto &cell_vec = args.data[0];
-    cell_vec.Flatten(args.size());  // Ensure vector is flat before accessing
+    cell_vec.Flatten();  // Ensure vector is flat before accessing
 
     auto &struct_entries = StructVector::GetEntries(result);
     auto &min_lon_result = struct_entries[0];
@@ -467,8 +467,8 @@ static void QuadbinPixelXYFunction(DataChunk &args, ExpressionState &state, Vect
 // PostGIS-like API: Returns TRUE if the tile's bounding box intersects the geometry
 // Users don't need to understand quadbins - they just think of 'block' as tile location
 static void STIntersectsFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
 
     auto cell_data = FlatVector::GetData<uint64_t>(args.data[0]);
     auto geom_data = FlatVector::GetData<string_t>(args.data[1]);
@@ -508,8 +508,8 @@ static void STIntersectsFunction(DataChunk &args, ExpressionState &state, Vector
 // PostGIS-like API: Returns TRUE if the geometry fully contains the tile
 // Note: argument order matches PostGIS convention (container, contained)
 static void STContainsFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
 
     auto geom_data = FlatVector::GetData<string_t>(args.data[0]);
     auto cell_data = FlatVector::GetData<uint64_t>(args.data[1]);
@@ -871,8 +871,8 @@ static void QuadbinKringFunction(DataChunk &args, ExpressionState &state, Vector
 static void STPointFunction(DataChunk &args, ExpressionState &state, Vector &result) {
     auto &lon_vec = args.data[0];
     auto &lat_vec = args.data[1];
-    lon_vec.Flatten(args.size());
-    lat_vec.Flatten(args.size());
+    lon_vec.Flatten();
+    lat_vec.Flatten();
 
     auto lon_data = FlatVector::GetData<double>(lon_vec);
     auto lat_data = FlatVector::GetData<double>(lat_vec);
@@ -901,7 +901,7 @@ static void STPointFunction(DataChunk &args, ExpressionState &state, Vector &res
 // Returns the X coordinate (longitude) of a POINT geometry
 static void STXFunction(DataChunk &args, ExpressionState &state, Vector &result) {
     auto &geom_vec = args.data[0];
-    geom_vec.Flatten(args.size());
+    geom_vec.Flatten();
 
     auto geom_data = FlatVector::GetData<string_t>(geom_vec);
     auto result_data = FlatVector::GetDataMutable<double>(result);
@@ -942,7 +942,7 @@ static void STXFunction(DataChunk &args, ExpressionState &state, Vector &result)
 // Returns the Y coordinate (latitude) of a POINT geometry
 static void STYFunction(DataChunk &args, ExpressionState &state, Vector &result) {
     auto &geom_vec = args.data[0];
-    geom_vec.Flatten(args.size());
+    geom_vec.Flatten();
 
     auto geom_data = FlatVector::GetData<string_t>(geom_vec);
     auto result_data = FlatVector::GetDataMutable<double>(result);

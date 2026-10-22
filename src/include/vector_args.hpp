@@ -10,7 +10,7 @@ namespace raquet {
 // value, so rows 1..n read past it. Flatten first.
 inline void FlattenArgs(DataChunk &args) {
     for (idx_t col = 0; col < args.ColumnCount(); col++) {
-        args.data[col].Flatten(args.size());
+        args.data[col].Flatten();
     }
 }
 

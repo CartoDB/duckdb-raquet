@@ -318,10 +318,10 @@ struct ClipMetadata {
 // ============================================================================
 
 static void STClipFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(args.data[0]);
     auto block_data = FlatVector::GetData<uint64_t>(args.data[1]);
@@ -329,7 +329,7 @@ static void STClipFunction(DataChunk &args, ExpressionState &state, Vector &resu
     auto metadata_data = FlatVector::GetData<string_t>(args.data[3]);
 
 
-    auto list_data = ListVector::GetData(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
     auto &list_child = ListVector::GetChildMutable(result);
 
     idx_t total_list_size = 0;
@@ -460,11 +460,11 @@ static void STClipFunction(DataChunk &args, ExpressionState &state, Vector &resu
 // ============================================================================
 
 static void STClipNodataFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
-    args.data[4].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
+    args.data[4].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(args.data[0]);
     auto block_data = FlatVector::GetData<uint64_t>(args.data[1]);
@@ -473,7 +473,7 @@ static void STClipNodataFunction(DataChunk &args, ExpressionState &state, Vector
     auto nodata_data = FlatVector::GetData<double>(args.data[4]);
 
 
-    auto list_data = ListVector::GetData(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
 
     idx_t total_list_size = 0;
 
@@ -598,11 +598,11 @@ static void STClipNodataFunction(DataChunk &args, ExpressionState &state, Vector
 // ============================================================================
 
 static void STClipMaskFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
-    args.data[2].Flatten(args.size());
-    args.data[3].Flatten(args.size());
-    args.data[4].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
+    args.data[2].Flatten();
+    args.data[3].Flatten();
+    args.data[4].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(args.data[0]);
     auto block_data = FlatVector::GetData<uint64_t>(args.data[1]);
@@ -611,7 +611,7 @@ static void STClipMaskFunction(DataChunk &args, ExpressionState &state, Vector &
     auto nodata_data = FlatVector::GetData<double>(args.data[4]);
 
 
-    auto list_data = ListVector::GetData(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
 
     idx_t total_list_size = 0;
 

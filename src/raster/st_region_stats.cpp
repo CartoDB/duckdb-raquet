@@ -551,10 +551,10 @@ static void ProcessTileForRegionStats(RegionStatsState &state, const string_t &b
 // Update function for 4-argument version
 static void RegionStatsUpdate(Vector inputs[], AggregateInputData &aggr_input_data, idx_t input_count,
                                Vector &state_vector, idx_t count) {
-    inputs[0].Flatten(count);
-    inputs[1].Flatten(count);
-    inputs[2].Flatten(count);
-    inputs[3].Flatten(count);
+    inputs[0].Flatten();
+    inputs[1].Flatten();
+    inputs[2].Flatten();
+    inputs[3].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(inputs[0]);
     auto block_data = FlatVector::GetData<uint64_t>(inputs[1]);
@@ -589,11 +589,11 @@ static void RegionStatsUpdate(Vector inputs[], AggregateInputData &aggr_input_da
 // Update function for 5-argument version (with nodata)
 static void RegionStatsUpdateNodata(Vector inputs[], AggregateInputData &aggr_input_data, idx_t input_count,
                                      Vector &state_vector, idx_t count) {
-    inputs[0].Flatten(count);
-    inputs[1].Flatten(count);
-    inputs[2].Flatten(count);
-    inputs[3].Flatten(count);
-    inputs[4].Flatten(count);
+    inputs[0].Flatten();
+    inputs[1].Flatten();
+    inputs[2].Flatten();
+    inputs[3].Flatten();
+    inputs[4].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(inputs[0]);
     auto block_data = FlatVector::GetData<uint64_t>(inputs[1]);
@@ -646,11 +646,11 @@ static int ComputeTargetResolution(const std::string &resolution_str, const stri
 // Update function for 5-argument version (with resolution)
 static void RegionStatsUpdateResolution(Vector inputs[], AggregateInputData &aggr_input_data, idx_t input_count,
                                          Vector &state_vector, idx_t count) {
-    inputs[0].Flatten(count);
-    inputs[1].Flatten(count);
-    inputs[2].Flatten(count);
-    inputs[3].Flatten(count);
-    inputs[4].Flatten(count);
+    inputs[0].Flatten();
+    inputs[1].Flatten();
+    inputs[2].Flatten();
+    inputs[3].Flatten();
+    inputs[4].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(inputs[0]);
     auto block_data = FlatVector::GetData<uint64_t>(inputs[1]);
@@ -682,12 +682,12 @@ static void RegionStatsUpdateResolution(Vector inputs[], AggregateInputData &agg
 // Update function for 6-argument version (with nodata + resolution)
 static void RegionStatsUpdateNodataResolution(Vector inputs[], AggregateInputData &aggr_input_data, idx_t input_count,
                                                Vector &state_vector, idx_t count) {
-    inputs[0].Flatten(count);
-    inputs[1].Flatten(count);
-    inputs[2].Flatten(count);
-    inputs[3].Flatten(count);
-    inputs[4].Flatten(count);
-    inputs[5].Flatten(count);
+    inputs[0].Flatten();
+    inputs[1].Flatten();
+    inputs[2].Flatten();
+    inputs[3].Flatten();
+    inputs[4].Flatten();
+    inputs[5].Flatten();
 
     auto band_data = FlatVector::GetData<string_t>(inputs[0]);
     auto block_data = FlatVector::GetData<uint64_t>(inputs[1]);

@@ -33,7 +33,7 @@ namespace duckdb {
 
 // raquet_parse_metadata(metadata_json VARCHAR) -> STRUCT
 static void RaquetParseMetadataFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
+    args.data[0].Flatten();
 
     auto metadata_data = FlatVector::GetData<string_t>(args.data[0]);
     auto &result_mask = FlatVector::ValidityMutable(result);
@@ -84,8 +84,8 @@ static void RaquetParseMetadataFunction(DataChunk &args, ExpressionState &state,
 // ST_Band(metadata VARCHAR, band_name VARCHAR) -> INTEGER
 // Returns the 0-based band index for a given band name, or NULL if not found
 static void STBandFunction(DataChunk &args, ExpressionState &state, Vector &result) {
-    args.data[0].Flatten(args.size());
-    args.data[1].Flatten(args.size());
+    args.data[0].Flatten();
+    args.data[1].Flatten();
 
     auto metadata_data = FlatVector::GetData<string_t>(args.data[0]);
     auto band_name_data = FlatVector::GetData<string_t>(args.data[1]);
