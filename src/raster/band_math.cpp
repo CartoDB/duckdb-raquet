@@ -2,6 +2,8 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
+#include "duckdb/common/vector/list_vector.hpp"
+#include "duckdb/common/vector/struct_vector.hpp"
 #include "band_decoder.hpp"
 #include "raquet_metadata.hpp"
 #include "vector_args.hpp"
@@ -48,8 +50,8 @@ static void STNormalizedDifferenceFunction(DataChunk &args, ExpressionState &sta
 
 
     auto list_data = ListVector::GetData(result);
-    auto &list_child = ListVector::GetEntry(result);
-    auto child_data = FlatVector::GetData<double>(list_child);
+    auto &list_child = ListVector::GetChildMutable(result);
+    auto child_data = FlatVector::GetDataMutable<double>(list_child);
 
     idx_t total_list_size = 0;
 
@@ -57,7 +59,7 @@ static void STNormalizedDifferenceFunction(DataChunk &args, ExpressionState &sta
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -68,7 +70,7 @@ static void STNormalizedDifferenceFunction(DataChunk &args, ExpressionState &sta
         if (band1.GetSize() == 0 || band2.GetSize() == 0) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -94,7 +96,7 @@ static void STNormalizedDifferenceFunction(DataChunk &args, ExpressionState &sta
 
             // Reserve space in result list
             ListVector::Reserve(result, total_list_size + num_pixels);
-            child_data = FlatVector::GetData<double>(ListVector::GetEntry(result));
+            child_data = FlatVector::GetDataMutable<double>(ListVector::GetChildMutable(result));
 
             // Compute normalized difference for each pixel
             for (size_t p = 0; p < num_pixels; p++) {
@@ -119,7 +121,7 @@ static void STNormalizedDifferenceFunction(DataChunk &args, ExpressionState &sta
         } catch (const std::exception &e) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
         }
     }
 
@@ -144,8 +146,8 @@ static void STNormalizedDifferenceNodataFunction(DataChunk &args, ExpressionStat
 
 
     auto list_data = ListVector::GetData(result);
-    auto &list_child = ListVector::GetEntry(result);
-    auto child_data = FlatVector::GetData<double>(list_child);
+    auto &list_child = ListVector::GetChildMutable(result);
+    auto child_data = FlatVector::GetDataMutable<double>(list_child);
 
     idx_t total_list_size = 0;
 
@@ -153,7 +155,7 @@ static void STNormalizedDifferenceNodataFunction(DataChunk &args, ExpressionStat
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -165,7 +167,7 @@ static void STNormalizedDifferenceNodataFunction(DataChunk &args, ExpressionStat
         if (band1.GetSize() == 0 || band2.GetSize() == 0) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -188,7 +190,7 @@ static void STNormalizedDifferenceNodataFunction(DataChunk &args, ExpressionStat
             const uint8_t *raw2 = DecodeBandData(band2, compressed, decompressed2, raw2_size);
 
             ListVector::Reserve(result, total_list_size + num_pixels);
-            child_data = FlatVector::GetData<double>(ListVector::GetEntry(result));
+            child_data = FlatVector::GetDataMutable<double>(ListVector::GetChildMutable(result));
 
             for (size_t p = 0; p < num_pixels; p++) {
                 double val1 = raquet::get_pixel_value(raw1, raw1_size, p, band1_dtype);
@@ -218,7 +220,7 @@ static void STNormalizedDifferenceNodataFunction(DataChunk &args, ExpressionStat
         } catch (const std::exception &e) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
         }
     }
 
@@ -243,8 +245,8 @@ static void STBandMathFunction(DataChunk &args, ExpressionState &state, Vector &
 
 
     auto list_data = ListVector::GetData(result);
-    auto &list_child = ListVector::GetEntry(result);
-    auto child_data = FlatVector::GetData<double>(list_child);
+    auto &list_child = ListVector::GetChildMutable(result);
+    auto child_data = FlatVector::GetDataMutable<double>(list_child);
 
     idx_t total_list_size = 0;
 
@@ -252,7 +254,7 @@ static void STBandMathFunction(DataChunk &args, ExpressionState &state, Vector &
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -264,7 +266,7 @@ static void STBandMathFunction(DataChunk &args, ExpressionState &state, Vector &
         if (band1.GetSize() == 0 || band2.GetSize() == 0) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -287,7 +289,7 @@ static void STBandMathFunction(DataChunk &args, ExpressionState &state, Vector &
             const uint8_t *raw2 = DecodeBandData(band2, compressed, decompressed2, raw2_size);
 
             ListVector::Reserve(result, total_list_size + num_pixels);
-            child_data = FlatVector::GetData<double>(ListVector::GetEntry(result));
+            child_data = FlatVector::GetDataMutable<double>(ListVector::GetChildMutable(result));
 
             // Determine operation
             enum class Op { ADD, SUBTRACT, MULTIPLY, DIVIDE, NDIFF };
@@ -360,14 +362,14 @@ static void STNormalizedDifferenceStatsFunction(DataChunk &args, ExpressionState
 
 
     auto &struct_entries = StructVector::GetEntries(result);
-    auto count_data = FlatVector::GetData<int64_t>(*struct_entries[0]);
-    auto sum_data = FlatVector::GetData<double>(*struct_entries[1]);
-    auto mean_data = FlatVector::GetData<double>(*struct_entries[2]);
-    auto min_data = FlatVector::GetData<double>(*struct_entries[3]);
-    auto max_data = FlatVector::GetData<double>(*struct_entries[4]);
-    auto stddev_data = FlatVector::GetData<double>(*struct_entries[5]);
+    auto count_data = FlatVector::GetDataMutable<int64_t>(struct_entries[0]);
+    auto sum_data = FlatVector::GetDataMutable<double>(struct_entries[1]);
+    auto mean_data = FlatVector::GetDataMutable<double>(struct_entries[2]);
+    auto min_data = FlatVector::GetDataMutable<double>(struct_entries[3]);
+    auto max_data = FlatVector::GetDataMutable<double>(struct_entries[4]);
+    auto stddev_data = FlatVector::GetDataMutable<double>(struct_entries[5]);
 
-    auto &result_validity = FlatVector::Validity(result);
+    auto &result_validity = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
@@ -463,6 +465,7 @@ void RegisterBandMathFunctions(ExtensionLoader &loader) {
         {LogicalType::BLOB, LogicalType::BLOB, LogicalType::VARCHAR},
         LogicalType::LIST(LogicalType::DOUBLE),
         STNormalizedDifferenceFunction);
+    nd_fn.SetFallible();
     loader.RegisterFunction(nd_fn);
 
     // ST_NormalizedDifference(band1, band2, metadata, nodata) -> DOUBLE[]
@@ -470,6 +473,7 @@ void RegisterBandMathFunctions(ExtensionLoader &loader) {
         {LogicalType::BLOB, LogicalType::BLOB, LogicalType::VARCHAR, LogicalType::DOUBLE},
         LogicalType::LIST(LogicalType::DOUBLE),
         STNormalizedDifferenceNodataFunction);
+    nd_nodata_fn.SetFallible();
     loader.RegisterFunction(nd_nodata_fn);
 
     // ST_BandMath(band1, band2, operation, metadata) -> DOUBLE[]
@@ -477,6 +481,7 @@ void RegisterBandMathFunctions(ExtensionLoader &loader) {
         {LogicalType::BLOB, LogicalType::BLOB, LogicalType::VARCHAR, LogicalType::VARCHAR},
         LogicalType::LIST(LogicalType::DOUBLE),
         STBandMathFunction);
+    bandmath_fn.SetFallible();
     loader.RegisterFunction(bandmath_fn);
 
     // ST_NormalizedDifferenceStats(band1, band2, metadata) -> STRUCT(...)
@@ -484,6 +489,7 @@ void RegisterBandMathFunctions(ExtensionLoader &loader) {
         {LogicalType::BLOB, LogicalType::BLOB, LogicalType::VARCHAR},
         stats_type,
         STNormalizedDifferenceStatsFunction);
+    nd_stats_fn.SetFallible();
     loader.RegisterFunction(nd_stats_fn);
 }
 

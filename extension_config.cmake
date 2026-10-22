@@ -6,6 +6,10 @@ duckdb_extension_load(raquet
     LOAD_TESTS
 )
 
+# DuckDB 2.0+ only builds extensions loaded above; link raquet into the shell and
+# unittest so `require raquet` works without INSTALL/LOAD.
+duckdb_extension_statically_link(raquet)
+
 # Include parquet (required for read_parquet)
 duckdb_extension_load(parquet)
 

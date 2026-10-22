@@ -9,7 +9,6 @@
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/main/query_result.hpp"
-#include "duckdb/main/materialized_query_result.hpp"
 
 #include <memory>
 #include <sstream>
@@ -241,7 +240,7 @@ struct RaquetMergeBandsGlobalState : public GlobalTableFunctionState {
 // ─────────────────────────────────────────────
 static unique_ptr<FunctionData> RaquetMergeBandsBind(
         ClientContext &context, TableFunctionBindInput &input,
-        vector<LogicalType> &return_types, vector<string> &names) {
+        vector<LogicalType> &return_types, vector<Identifier> &names) {
 
     if (input.inputs.empty()) {
         throw InvalidInputException("raquet_merge_bands: missing input list");
@@ -289,7 +288,7 @@ static unique_ptr<FunctionData> RaquetMergeBandsBind(
     names.push_back("block");      return_types.push_back(LogicalType::UBIGINT);
     names.push_back("metadata");   return_types.push_back(LogicalType::VARCHAR);
     for (size_t i = 0; i < bind_data->input_paths.size(); i++) {
-        names.push_back("band_" + std::to_string(i + 1));
+        names.emplace_back("band_" + std::to_string(i + 1));
         return_types.push_back(LogicalType::BLOB);
     }
     return std::move(bind_data);
@@ -337,8 +336,8 @@ static void RaquetMergeBandsExecute(ClientContext &context, TableFunctionInput &
     idx_t band_count = bind.input_paths.size();
 
     if (!state.metadata_emitted) {
-        FlatVector::GetData<uint64_t>(output.data[0])[out_row] = 0;
-        FlatVector::GetData<string_t>(output.data[1])[out_row] =
+        FlatVector::GetDataMutable<uint64_t>(output.data[0])[out_row] = 0;
+        FlatVector::GetDataMutable<string_t>(output.data[1])[out_row] =
             StringVector::AddString(output.data[1], bind.merged_metadata);
         for (idx_t i = 0; i < band_count; i++) {
             FlatVector::SetNull(output.data[2 + i], out_row, true);

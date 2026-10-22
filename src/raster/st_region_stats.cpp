@@ -2,6 +2,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/aggregate_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
+#include "duckdb/common/vector/struct_vector.hpp"
 #include "band_decoder.hpp"
 #include "raquet_metadata.hpp"
 #include "quadbin.hpp"
@@ -366,18 +367,20 @@ struct RegionStatsBindData : public FunctionData {
     }
 };
 
-static idx_t RegionStatsStateSize(const AggregateFunction &) {
+static idx_t RegionStatsStateSize(AggregateStateInput &) {
     return sizeof(RegionStatsState);
 }
 
-static void RegionStatsStateInitialize(const AggregateFunction &, data_ptr_t state) {
-    auto &s = *reinterpret_cast<RegionStatsState *>(state);
-    s.count = 0;
-    s.sum = 0.0;
-    s.mean = 0.0;
-    s.m2 = 0.0;
-    s.min_val = std::numeric_limits<double>::max();
-    s.max_val = std::numeric_limits<double>::lowest();
+static void RegionStatsStateInitialize(AggregateStateInput &, data_ptr_t *states, idx_t count) {
+    for (idx_t i = 0; i < count; i++) {
+        auto &s = *reinterpret_cast<RegionStatsState *>(states[i]);
+        s.count = 0;
+        s.sum = 0.0;
+        s.mean = 0.0;
+        s.m2 = 0.0;
+        s.min_val = std::numeric_limits<double>::max();
+        s.max_val = std::numeric_limits<double>::lowest();
+    }
 }
 
 static void RegionStatsCombine(Vector &source, Vector &target, AggregateInputData &aggr_input_data, idx_t count) {
@@ -411,19 +414,19 @@ static void RegionStatsCombine(Vector &source, Vector &target, AggregateInputDat
     }
 }
 
-static void RegionStatsFinalize(Vector &states, AggregateInputData &aggr_input_data, Vector &result,
+static void RegionStatsFinalize(Vector &states, AggregateFinalizeInputData &aggr_input_data, Vector &result,
                                  idx_t count, idx_t offset) {
     auto state_data = FlatVector::GetData<RegionStatsState *>(states);
     auto &struct_entries = StructVector::GetEntries(result);
 
-    auto count_data = FlatVector::GetData<int64_t>(*struct_entries[0]);
-    auto sum_data = FlatVector::GetData<double>(*struct_entries[1]);
-    auto mean_data = FlatVector::GetData<double>(*struct_entries[2]);
-    auto min_data = FlatVector::GetData<double>(*struct_entries[3]);
-    auto max_data = FlatVector::GetData<double>(*struct_entries[4]);
-    auto stddev_data = FlatVector::GetData<double>(*struct_entries[5]);
+    auto count_data = FlatVector::GetDataMutable<int64_t>(struct_entries[0]);
+    auto sum_data = FlatVector::GetDataMutable<double>(struct_entries[1]);
+    auto mean_data = FlatVector::GetDataMutable<double>(struct_entries[2]);
+    auto min_data = FlatVector::GetDataMutable<double>(struct_entries[3]);
+    auto max_data = FlatVector::GetDataMutable<double>(struct_entries[4]);
+    auto stddev_data = FlatVector::GetDataMutable<double>(struct_entries[5]);
 
-    auto &result_validity = FlatVector::Validity(result);
+    auto &result_validity = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < count; i++) {
         auto &state = *state_data[i];
@@ -717,8 +720,7 @@ static void RegionStatsUpdateNodataResolution(Vector inputs[], AggregateInputDat
     }
 }
 
-static unique_ptr<FunctionData> RegionStatsBind(ClientContext &context, AggregateFunction &function,
-                                                 vector<unique_ptr<Expression>> &arguments) {
+static unique_ptr<FunctionData> RegionStatsBind(BindAggregateFunctionInput &input) {
     return make_uniq<RegionStatsBindData>();
 }
 

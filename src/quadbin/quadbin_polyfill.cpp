@@ -2,6 +2,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
+#include "duckdb/common/vector/list_vector.hpp"
 #include "quadbin.hpp"
 #include "vector_args.hpp"
 #include <vector>
@@ -396,9 +397,9 @@ static void QuadbinPolyfillFunction(DataChunk &args, ExpressionState &state, Vec
     auto geom_data = FlatVector::GetData<string_t>(args.data[0]);
     auto res_data = FlatVector::GetData<int32_t>(args.data[1]);
 
-    auto &list_entries = ListVector::GetEntry(result);
-    auto list_data = FlatVector::GetData<list_entry_t>(result);
-    auto &result_validity = FlatVector::Validity(result);
+    auto &list_entries = ListVector::GetChildMutable(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
+    auto &result_validity = FlatVector::ValidityMutable(result);
 
     idx_t total_cells = 0;
     for (idx_t i = 0; i < args.size(); i++) {
@@ -422,7 +423,7 @@ static void QuadbinPolyfillFunction(DataChunk &args, ExpressionState &state, Vec
         list_data[i].length = cells.size();
 
         ListVector::Reserve(result, total_cells + cells.size());
-        auto cell_data = FlatVector::GetData<uint64_t>(list_entries);
+        auto cell_data = FlatVector::GetDataMutable<uint64_t>(list_entries);
         for (size_t j = 0; j < cells.size(); j++) {
             cell_data[total_cells + j] = cells[j];
         }
@@ -441,9 +442,9 @@ static void QuadbinPolyfillModeFunction(DataChunk &args, ExpressionState &state,
     auto res_data = FlatVector::GetData<int32_t>(args.data[1]);
     auto mode_data = FlatVector::GetData<string_t>(args.data[2]);
 
-    auto &list_entries = ListVector::GetEntry(result);
-    auto list_data = FlatVector::GetData<list_entry_t>(result);
-    auto &result_validity = FlatVector::Validity(result);
+    auto &list_entries = ListVector::GetChildMutable(result);
+    auto list_data = FlatVector::GetDataMutable<list_entry_t>(result);
+    auto &result_validity = FlatVector::ValidityMutable(result);
 
     idx_t total_cells = 0;
     for (idx_t i = 0; i < args.size(); i++) {
@@ -469,7 +470,7 @@ static void QuadbinPolyfillModeFunction(DataChunk &args, ExpressionState &state,
         list_data[i].length = cells.size();
 
         ListVector::Reserve(result, total_cells + cells.size());
-        auto cell_data = FlatVector::GetData<uint64_t>(list_entries);
+        auto cell_data = FlatVector::GetDataMutable<uint64_t>(list_entries);
         for (size_t j = 0; j < cells.size(); j++) {
             cell_data[total_cells + j] = cells[j];
         }
@@ -493,6 +494,8 @@ void RegisterPolyfillFunctions(ExtensionLoader &loader) {
         {LogicalType::GEOMETRY(), LogicalType::INTEGER, LogicalType::VARCHAR},
         LogicalType::LIST(LogicalType::UBIGINT),
         QuadbinPolyfillModeFunction));
+
+    polyfill_set.SetFallible();
 
     loader.RegisterFunction(polyfill_set);
 }

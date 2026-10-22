@@ -263,13 +263,8 @@ static const DefaultTableMacro RAQUET_AT_TABLE_MACROS[] = {
 
 // Create a table macro function from a DefaultTableMacro definition
 static unique_ptr<MacroFunction> CreateTableMacroFunction(const DefaultTableMacro &default_macro) {
-    Parser parser;
-    parser.ParseQuery(default_macro.macro);
-    if (parser.statements.size() != 1 || parser.statements[0]->type != StatementType::SELECT_STATEMENT) {
-        throw InternalException("Expected a single select statement in CreateTableMacroFunction");
-    }
-    auto node = std::move(parser.statements[0]->Cast<SelectStatement>().node);
-    auto function = make_uniq<TableMacroFunction>(std::move(node));
+    auto parser = Parser::GetBuiltinParser();
+    auto function = make_uniq<TableMacroFunction>(parser.ParseSelectNode(default_macro.macro));
 
     // Add parameters
     for (idx_t param_idx = 0; default_macro.parameters[param_idx] != nullptr; param_idx++) {
@@ -282,8 +277,7 @@ static unique_ptr<MacroFunction> CreateTableMacroFunction(const DefaultTableMacr
 // Create a CreateMacroInfo with multiple overloaded table macros
 static unique_ptr<CreateMacroInfo> CreateReadRaquetMacroInfo() {
     auto bind_info = make_uniq<CreateMacroInfo>(CatalogType::TABLE_MACRO_ENTRY);
-    bind_info->schema = DEFAULT_SCHEMA;
-    bind_info->name = "read_raquet";
+    bind_info->SetQualifiedName(QualifiedName({Identifier(DEFAULT_SCHEMA)}, Identifier("read_raquet")));
     bind_info->temporary = true;
     bind_info->internal = true;
 
@@ -297,8 +291,7 @@ static unique_ptr<CreateMacroInfo> CreateReadRaquetMacroInfo() {
 
 static unique_ptr<CreateMacroInfo> CreateReadRaquetMetadataMacroInfo() {
     auto bind_info = make_uniq<CreateMacroInfo>(CatalogType::TABLE_MACRO_ENTRY);
-    bind_info->schema = DEFAULT_SCHEMA;
-    bind_info->name = "read_raquet_metadata";
+    bind_info->SetQualifiedName(QualifiedName({Identifier(DEFAULT_SCHEMA)}, Identifier("read_raquet_metadata")));
     bind_info->temporary = true;
     bind_info->internal = true;
 
@@ -310,8 +303,7 @@ static unique_ptr<CreateMacroInfo> CreateReadRaquetMetadataMacroInfo() {
 // Create a CreateMacroInfo for read_raquet_at table macro
 static unique_ptr<CreateMacroInfo> CreateReadRaquetAtMacroInfo() {
     auto bind_info = make_uniq<CreateMacroInfo>(CatalogType::TABLE_MACRO_ENTRY);
-    bind_info->schema = DEFAULT_SCHEMA;
-    bind_info->name = "read_raquet_at";
+    bind_info->SetQualifiedName(QualifiedName({Identifier(DEFAULT_SCHEMA)}, Identifier("read_raquet_at")));
     bind_info->temporary = true;
     bind_info->internal = true;
 
@@ -326,8 +318,7 @@ static unique_ptr<CreateMacroInfo> CreateReadRaquetAtMacroInfo() {
 // Create a CreateMacroInfo for ST_Raster table macro
 static unique_ptr<CreateMacroInfo> CreateReadRaquetTableMacroInfo() {
     auto bind_info = make_uniq<CreateMacroInfo>(CatalogType::TABLE_MACRO_ENTRY);
-    bind_info->schema = DEFAULT_SCHEMA;
-    bind_info->name = "ST_Raster";
+    bind_info->SetQualifiedName(QualifiedName({Identifier(DEFAULT_SCHEMA)}, Identifier("ST_Raster")));
     bind_info->temporary = true;
     bind_info->internal = true;
 
@@ -341,8 +332,7 @@ static unique_ptr<CreateMacroInfo> CreateReadRaquetTableMacroInfo() {
 // Create a CreateMacroInfo for ST_RasterAt table macro
 static unique_ptr<CreateMacroInfo> CreateReadRaquetTableAtMacroInfo() {
     auto bind_info = make_uniq<CreateMacroInfo>(CatalogType::TABLE_MACRO_ENTRY);
-    bind_info->schema = DEFAULT_SCHEMA;
-    bind_info->name = "ST_RasterAt";
+    bind_info->SetQualifiedName(QualifiedName({Identifier(DEFAULT_SCHEMA)}, Identifier("ST_RasterAt")));
     bind_info->temporary = true;
     bind_info->internal = true;
 

@@ -2,6 +2,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
+#include "duckdb/common/vector/list_vector.hpp"
 #include "band_decoder.hpp"
 #include "quadbin.hpp"
 #include "raquet_metadata.hpp"
@@ -101,8 +102,8 @@ static void RaquetPixelFunction(DataChunk &args, ExpressionState &state, Vector 
     auto y_data = FlatVector::GetData<int32_t>(args.data[3]);
     auto width_data = FlatVector::GetData<int32_t>(args.data[4]);
     auto compression_data = FlatVector::GetData<string_t>(args.data[5]);
-    auto result_data = FlatVector::GetData<double>(result);
-    auto &result_mask = FlatVector::Validity(result);
+    auto result_data = FlatVector::GetDataMutable<double>(result);
+    auto &result_mask = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
@@ -162,8 +163,8 @@ static void RaquetDecodeBandFunction(DataChunk &args, ExpressionState &state, Ve
     auto compression_data = FlatVector::GetData<string_t>(args.data[4]);
 
     auto list_data = ListVector::GetData(result);
-    auto &list_child = ListVector::GetEntry(result);
-    auto child_data = FlatVector::GetData<double>(list_child);
+    auto &list_child = ListVector::GetChildMutable(result);
+    auto child_data = FlatVector::GetDataMutable<double>(list_child);
 
     idx_t total_list_size = 0;
 
@@ -171,7 +172,7 @@ static void RaquetDecodeBandFunction(DataChunk &args, ExpressionState &state, Ve
         if (raquet::AnyInputNull(args, i)) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
         auto band = band_data[i];
@@ -186,7 +187,7 @@ static void RaquetDecodeBandFunction(DataChunk &args, ExpressionState &state, Ve
         if (band.GetSize() == 0) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
             continue;
         }
 
@@ -203,7 +204,7 @@ static void RaquetDecodeBandFunction(DataChunk &args, ExpressionState &state, Ve
 
             // Reserve space if needed
             ListVector::Reserve(result, total_list_size + values.size());
-            child_data = FlatVector::GetData<double>(ListVector::GetEntry(result));
+            child_data = FlatVector::GetDataMutable<double>(ListVector::GetChildMutable(result));
 
             // Copy values
             for (size_t j = 0; j < values.size(); j++) {
@@ -214,7 +215,7 @@ static void RaquetDecodeBandFunction(DataChunk &args, ExpressionState &state, Ve
         } catch (const std::exception &e) {
             list_data[i].offset = total_list_size;
             list_data[i].length = 0;
-            FlatVector::Validity(result).SetInvalid(i);
+            FlatVector::ValidityMutable(result).SetInvalid(i);
         }
     }
 
@@ -236,8 +237,8 @@ static void RaquetPixelWithMetadataFunction(DataChunk &args, ExpressionState &st
     auto metadata_data = FlatVector::GetData<string_t>(args.data[1]);
     auto x_data = FlatVector::GetData<int32_t>(args.data[2]);
     auto y_data = FlatVector::GetData<int32_t>(args.data[3]);
-    auto result_data = FlatVector::GetData<double>(result);
-    auto &result_mask = FlatVector::Validity(result);
+    auto result_data = FlatVector::GetDataMutable<double>(result);
+    auto &result_mask = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
@@ -299,8 +300,8 @@ static void RaquetPixelWithMetadataAndBandFunction(DataChunk &args, ExpressionSt
     auto band_idx_data = FlatVector::GetData<int32_t>(args.data[2]);
     auto x_data = FlatVector::GetData<int32_t>(args.data[3]);
     auto y_data = FlatVector::GetData<int32_t>(args.data[4]);
-    auto result_data = FlatVector::GetData<double>(result);
-    auto &result_mask = FlatVector::Validity(result);
+    auto result_data = FlatVector::GetDataMutable<double>(result);
+    auto &result_mask = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
@@ -389,8 +390,8 @@ static void STRasterValueWithGeometryFunction(DataChunk &args, ExpressionState &
     auto band_data = FlatVector::GetData<string_t>(args.data[1]);
     auto geom_data = FlatVector::GetData<string_t>(args.data[2]);  // GEOMETRY is stored as string_t (WKB)
     auto metadata_data = FlatVector::GetData<string_t>(args.data[3]);
-    auto result_data = FlatVector::GetData<double>(result);
-    auto &result_mask = FlatVector::Validity(result);
+    auto result_data = FlatVector::GetDataMutable<double>(result);
+    auto &result_mask = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
@@ -479,8 +480,8 @@ static void STRasterValueWithGeometryAndBandNameFunction(DataChunk &args, Expres
     auto geom_data = FlatVector::GetData<string_t>(args.data[2]);
     auto metadata_data = FlatVector::GetData<string_t>(args.data[3]);
     auto band_name_data = FlatVector::GetData<string_t>(args.data[4]);
-    auto result_data = FlatVector::GetData<double>(result);
-    auto &result_mask = FlatVector::Validity(result);
+    auto result_data = FlatVector::GetDataMutable<double>(result);
+    auto &result_mask = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
@@ -581,8 +582,8 @@ static void RaquetPixelInterleavedFunction(DataChunk &args, ExpressionState &sta
     auto band_idx_data = FlatVector::GetData<int32_t>(args.data[2]);
     auto x_data = FlatVector::GetData<int32_t>(args.data[3]);
     auto y_data = FlatVector::GetData<int32_t>(args.data[4]);
-    auto result_data = FlatVector::GetData<double>(result);
-    auto &result_mask = FlatVector::Validity(result);
+    auto result_data = FlatVector::GetDataMutable<double>(result);
+    auto &result_mask = FlatVector::ValidityMutable(result);
 
     for (idx_t i = 0; i < args.size(); i++) {
         if (raquet::AnyInputNull(args, i)) {
@@ -643,6 +644,7 @@ void RegisterRasterValueFunctions(ExtensionLoader &loader) {
          LogicalType::INTEGER, LogicalType::INTEGER, LogicalType::VARCHAR},
         LogicalType::DOUBLE,
         RaquetPixelFunction);
+    pixel_fn.SetFallible();
     loader.RegisterFunction(pixel_fn);
 
     // raquet_decode_band(band, dtype, width, height, compression) -> DOUBLE[]
@@ -651,6 +653,7 @@ void RegisterRasterValueFunctions(ExtensionLoader &loader) {
          LogicalType::INTEGER, LogicalType::VARCHAR},
         LogicalType::LIST(LogicalType::DOUBLE),
         RaquetDecodeBandFunction);
+    decode_band_fn.SetFallible();
     loader.RegisterFunction(decode_band_fn);
 
     // raquet_pixel(band, metadata, x, y) -> DOUBLE
@@ -658,6 +661,7 @@ void RegisterRasterValueFunctions(ExtensionLoader &loader) {
         {LogicalType::BLOB, LogicalType::VARCHAR, LogicalType::INTEGER, LogicalType::INTEGER},
         LogicalType::DOUBLE,
         RaquetPixelWithMetadataFunction);
+    pixel_meta_fn.SetFallible();
     loader.RegisterFunction(pixel_meta_fn);
 
     // raquet_pixel(band, metadata, band_index, x, y) -> DOUBLE
@@ -666,6 +670,7 @@ void RegisterRasterValueFunctions(ExtensionLoader &loader) {
          LogicalType::INTEGER, LogicalType::INTEGER},
         LogicalType::DOUBLE,
         RaquetPixelWithMetadataAndBandFunction);
+    pixel_meta_band_fn.SetFallible();
     loader.RegisterFunction(pixel_meta_band_fn);
 
     // ========================================================================
@@ -678,6 +683,7 @@ void RegisterRasterValueFunctions(ExtensionLoader &loader) {
          LogicalType::VARCHAR},
         LogicalType::DOUBLE,
         STRasterValueWithGeometryFunction);
+    raster_value_geom_fn.SetFallible();
     loader.RegisterFunction(raster_value_geom_fn);
 
     // ST_RasterValue(block, band, point_geometry, metadata, band_name) -> DOUBLE
@@ -686,6 +692,7 @@ void RegisterRasterValueFunctions(ExtensionLoader &loader) {
          LogicalType::VARCHAR, LogicalType::VARCHAR},
         LogicalType::DOUBLE,
         STRasterValueWithGeometryAndBandNameFunction);
+    raster_value_geom_band_fn.SetFallible();
     loader.RegisterFunction(raster_value_geom_band_fn);
 
     // ========================================================================
@@ -698,6 +705,7 @@ void RegisterRasterValueFunctions(ExtensionLoader &loader) {
          LogicalType::INTEGER, LogicalType::INTEGER},
         LogicalType::DOUBLE,
         RaquetPixelInterleavedFunction);
+    pixel_interleaved_fn.SetFallible();
     loader.RegisterFunction(pixel_interleaved_fn);
 }
 

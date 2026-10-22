@@ -223,7 +223,7 @@ struct ReadRasterBindData : public TableFunctionData {
     idx_t estimated_tiles = 0;
 
     // Output column names
-    std::vector<std::string> column_names;
+    vector<Identifier> column_names;
 };
 
 // ─────────────────────────────────────────────
@@ -1102,7 +1102,7 @@ static void ValidateEncodingOptions(ReadRasterBindData &bind_data) {
 static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
                                                 TableFunctionBindInput &input,
                                                 vector<LogicalType> &return_types,
-                                                vector<string> &names) {
+                                                vector<Identifier> &names) {
     auto bind_data = make_uniq<ReadRasterBindData>();
     bind_data->filename = input.inputs[0].GetValue<string>();
 
@@ -1391,7 +1391,7 @@ static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
 
     // CF time dimension extraction (NetCDF)
     {
-        char **md = GDALGetMetadata(ds, nullptr);
+        CSLConstList md = GDALGetMetadata(ds, nullptr);
         if (md) {
             const char *time_units = CSLFetchNameValue(md, "time#units");
             if (!time_units) {
@@ -1592,7 +1592,7 @@ static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
         return_types.push_back(LogicalType::BLOB);
     } else {
         for (int b = 0; b < out_band_count; b++) {
-            names.push_back("band_" + std::to_string(b + 1));
+            names.emplace_back("band_" + std::to_string(b + 1));
             return_types.push_back(LogicalType::BLOB);
         }
     }
@@ -1601,12 +1601,12 @@ static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
     if (bind_data->statistics) {
         for (int b = 0; b < out_band_count; b++) {
             std::string prefix = "band_" + std::to_string(b + 1) + "_";
-            names.push_back(prefix + "count");  return_types.push_back(LogicalType::BIGINT);
-            names.push_back(prefix + "min");    return_types.push_back(LogicalType::DOUBLE);
-            names.push_back(prefix + "max");    return_types.push_back(LogicalType::DOUBLE);
-            names.push_back(prefix + "sum");    return_types.push_back(LogicalType::DOUBLE);
-            names.push_back(prefix + "mean");   return_types.push_back(LogicalType::DOUBLE);
-            names.push_back(prefix + "stddev"); return_types.push_back(LogicalType::DOUBLE);
+            names.emplace_back(prefix + "count");  return_types.push_back(LogicalType::BIGINT);
+            names.emplace_back(prefix + "min");    return_types.push_back(LogicalType::DOUBLE);
+            names.emplace_back(prefix + "max");    return_types.push_back(LogicalType::DOUBLE);
+            names.emplace_back(prefix + "sum");    return_types.push_back(LogicalType::DOUBLE);
+            names.emplace_back(prefix + "mean");   return_types.push_back(LogicalType::DOUBLE);
+            names.emplace_back(prefix + "stddev"); return_types.push_back(LogicalType::DOUBLE);
         }
     }
 
@@ -1705,7 +1705,7 @@ static void EmitTileRow(DataChunk &output, idx_t row_count,
     idx_t col = 0;
 
     // block column
-    FlatVector::GetData<uint64_t>(output.data[col])[row_count] = block;
+    FlatVector::GetDataMutable<uint64_t>(output.data[col])[row_count] = block;
     col++;
 
     // metadata column (NULL for data rows)
@@ -1717,7 +1717,7 @@ static void EmitTileRow(DataChunk &output, idx_t row_count,
         auto &blob = tile_data.compressed[b];
         auto str = StringVector::AddStringOrBlob(output.data[col],
             string_t(reinterpret_cast<const char *>(blob.data()), blob.size()));
-        FlatVector::GetData<string_t>(output.data[col])[row_count] = str;
+        FlatVector::GetDataMutable<string_t>(output.data[col])[row_count] = str;
         col++;
     }
 
@@ -1725,12 +1725,12 @@ static void EmitTileRow(DataChunk &output, idx_t row_count,
     if (bind_data.statistics) {
         for (size_t b = 0; b < tile_data.stats.size(); b++) {
             auto &s = tile_data.stats[b];
-            FlatVector::GetData<int64_t>(output.data[col])[row_count] = s.count;  col++;
-            FlatVector::GetData<double>(output.data[col])[row_count] = s.min;     col++;
-            FlatVector::GetData<double>(output.data[col])[row_count] = s.max;     col++;
-            FlatVector::GetData<double>(output.data[col])[row_count] = s.sum;     col++;
-            FlatVector::GetData<double>(output.data[col])[row_count] = s.mean;    col++;
-            FlatVector::GetData<double>(output.data[col])[row_count] = s.stddev;  col++;
+            FlatVector::GetDataMutable<int64_t>(output.data[col])[row_count] = s.count;  col++;
+            FlatVector::GetDataMutable<double>(output.data[col])[row_count] = s.min;     col++;
+            FlatVector::GetDataMutable<double>(output.data[col])[row_count] = s.max;     col++;
+            FlatVector::GetDataMutable<double>(output.data[col])[row_count] = s.sum;     col++;
+            FlatVector::GetDataMutable<double>(output.data[col])[row_count] = s.mean;    col++;
+            FlatVector::GetDataMutable<double>(output.data[col])[row_count] = s.stddev;  col++;
         }
     }
 }
@@ -1745,7 +1745,7 @@ template <class Pred>
 static bool WaitForPhase(ClientContext &context, ReadRasterGlobalState &state, Pred done) {
     std::unique_lock<std::mutex> lk(state.wait_mutex);
     while (!done() && !state.aborted.load(std::memory_order_acquire)) {
-        if (context.interrupted) {
+        if (context.IsInterrupted()) {
             throw InterruptException();
         }
         state.wait_cv.wait_for(lk, std::chrono::milliseconds(100));
@@ -2238,11 +2238,11 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
 
         // Emit metadata row: block=0, metadata=json, bands=NULL
         idx_t col = 0;
-        FlatVector::GetData<uint64_t>(output.data[col])[row_count] = 0;
+        FlatVector::GetDataMutable<uint64_t>(output.data[col])[row_count] = 0;
         col++;
 
         auto meta_str = StringVector::AddString(output.data[col], metadata_json);
-        FlatVector::GetData<string_t>(output.data[col])[row_count] = meta_str;
+        FlatVector::GetDataMutable<string_t>(output.data[col])[row_count] = meta_str;
         col++;
 
         // Band columns are NULL for metadata row
@@ -2301,21 +2301,23 @@ void RegisterReadRaster(ExtensionLoader &loader) {
     TableFunction func("read_raster", {LogicalType::VARCHAR},
                        ReadRasterExecute, ReadRasterBind, ReadRasterInitGlobal, ReadRasterInitLocal);
 
-    func.named_parameters["compression"] = LogicalType::VARCHAR;
-    func.named_parameters["resampling"] = LogicalType::VARCHAR;
-    func.named_parameters["block_size"] = LogicalType::INTEGER;
-    func.named_parameters["max_zoom"] = LogicalType::INTEGER;
-    func.named_parameters["min_zoom"] = LogicalType::INTEGER;
-    func.named_parameters["overviews"] = LogicalType::VARCHAR;
-    func.named_parameters["band_layout"] = LogicalType::VARCHAR;
-    func.named_parameters["quality"] = LogicalType::INTEGER;
-    func.named_parameters["statistics"] = LogicalType::BOOLEAN;
-    func.named_parameters["zoom_strategy"] = LogicalType::VARCHAR;
-    func.named_parameters["format"] = LogicalType::VARCHAR;
-    func.named_parameters["approx"] = LogicalType::BOOLEAN;
-    func.named_parameters["sparsity_probe"] = LogicalType::VARCHAR;
-    func.named_parameters["sparsity_probe_size"] = LogicalType::INTEGER;
-    func.named_parameters["bands"] = LogicalType::VARCHAR;
+    func.GetSignature().WithTypedKwargs("options", [](TypedKwargs &options) {
+        options.Add("compression", LogicalType::VARCHAR)
+            .Add("resampling", LogicalType::VARCHAR)
+            .Add("block_size", LogicalType::INTEGER)
+            .Add("max_zoom", LogicalType::INTEGER)
+            .Add("min_zoom", LogicalType::INTEGER)
+            .Add("overviews", LogicalType::VARCHAR)
+            .Add("band_layout", LogicalType::VARCHAR)
+            .Add("quality", LogicalType::INTEGER)
+            .Add("statistics", LogicalType::BOOLEAN)
+            .Add("zoom_strategy", LogicalType::VARCHAR)
+            .Add("format", LogicalType::VARCHAR)
+            .Add("approx", LogicalType::BOOLEAN)
+            .Add("sparsity_probe", LogicalType::VARCHAR)
+            .Add("sparsity_probe_size", LogicalType::INTEGER)
+            .Add("bands", LogicalType::VARCHAR);
+    });
     func.cardinality = ReadRasterCardinality;
 
     loader.RegisterFunction(func);
