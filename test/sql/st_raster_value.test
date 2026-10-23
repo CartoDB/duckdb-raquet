@@ -2,8 +2,8 @@
 # description: ST_RasterValue(block, band, point, metadata[, band_name]) against
 #              a decode-once reference. ST_RasterValue caches the last decoded
 #              tile per thread (issue #34); every point is evaluated against
-#              both gzip tiles, in an order that alternates tiles, so the
-#              results must match on both cache hits and cache misses.
+#              both gzip tiles, over more rows than one chunk holds, so the
+#              results must match on cache hits, misses and across chunks.
 # group: [raquet]
 
 require raquet
@@ -16,13 +16,14 @@ SELECT block, band_1, (SELECT metadata FROM 'test/data/raquet_test.parquet' WHER
 FROM 'test/data/raquet_test.parquet'
 WHERE block != 0;
 
-# A 32x32 grid of points over the raster bounds
+# A 48x48 grid of points over the raster bounds: 4608 (point, tile) pairs,
+# more than one 2048-row chunk
 statement ok
 CREATE TABLE pts AS
 SELECT row_number() OVER () AS id,
-       13.00025 + i * 0.0005 AS lon,
-       52.48425 + j * 0.0005 AS lat
-FROM range(32) a(i), range(32) b(j);
+       13.00025 + i * (0.016 / 48) AS lon,
+       52.48425 + j * (0.016 / 48) AS lat
+FROM range(48) a(i), range(48) b(j);
 
 # Reference: decode each tile once and pick the pixel of each point that falls
 # in it (NULL for nodata 0, and for points outside the tile)
@@ -38,7 +39,7 @@ SELECT p.id, d.block,
        END AS value
 FROM pts p, decoded d;
 
-# Points against both tiles, alternating tiles row by row
+# Points against both tiles
 statement ok
 CREATE TABLE pairs AS
 SELECT p.id, t.block, t.band_1, t.metadata, ('POINT(' || p.lon || ' ' || p.lat || ')')::GEOMETRY AS geom
@@ -52,7 +53,7 @@ SELECT count(*),
        count(*) FILTER (WHERE ST_RasterValue(x.block, x.band_1, x.geom, x.metadata, 'band_1') IS DISTINCT FROM e.value)
 FROM pairs x JOIN expected e USING (id, block);
 ----
-2048	0	0
+4608	0	0
 
 # The comparison is not vacuous: some points hit valid pixels
 query I
@@ -65,3 +66,16 @@ query I
 SELECT count(*) FROM pairs WHERE ST_RasterValue(block, band_1, geom, metadata, 'nope') IS NOT NULL;
 ----
 0
+
+# A band holding an empty zlib stream (8 bytes, stored inline by DuckDB) has
+# no pixels: NULL, on its own and mixed with real tiles of the same chunk
+query II
+SELECT count(*) FILTER (WHERE v IS NULL AND empty_band), count(*) FILTER (WHERE v IS DISTINCT FROM e.value AND NOT empty_band)
+FROM (
+    SELECT x.id, x.block, x.id % 3 = 0 AS empty_band,
+           ST_RasterValue(x.block, CASE WHEN x.id % 3 = 0 THEN from_base64('eNoDAAAAAAE=') ELSE x.band_1 END,
+                          x.geom, x.metadata) AS v
+    FROM pairs x
+) r JOIN expected e USING (id, block);
+----
+1536	0

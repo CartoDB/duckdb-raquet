@@ -428,6 +428,8 @@ static bool SameBytes(const string_t &value, const std::string &cached) {
 static const raquet::RaquetMetadata &GetCachedMetadata(RasterValueLocalState &cache, const string_t &metadata) {
     if (!cache.has_meta || !SameBytes(metadata, cache.metadata_str)) {
         cache.has_meta = false;
+        // A tile decoded under other metadata may have another layout or compression
+        cache.has_tile = false;
         cache.meta = raquet::parse_metadata(metadata.GetString());
         cache.metadata_str = metadata.GetString();
         cache.has_meta = true;
@@ -436,10 +438,12 @@ static const raquet::RaquetMetadata &GetCachedMetadata(RasterValueLocalState &ca
 }
 
 // Read the pixel of `band_idx` at (pixel_x, pixel_y) from a tile, decompressing it
-// only when it differs from the tile this thread decompressed last
-static double CachedPixelValue(RasterValueLocalState &cache, const string_t &band,
-                               const raquet::RaquetMetadata &meta, const std::string &dtype,
-                               int band_idx, int pixel_x, int pixel_y) {
+// only when it differs from the tile this thread decompressed last. Returns false
+// when the tile decodes to no pixels (e.g. an empty zlib stream standing in for
+// a band with no data), which the caller reports as NULL.
+static bool CachedPixelValue(RasterValueLocalState &cache, const string_t &band,
+                             const raquet::RaquetMetadata &meta, const std::string &dtype,
+                             int band_idx, int pixel_x, int pixel_y, double &value) {
     auto raw = reinterpret_cast<const uint8_t*>(band.GetData());
     int tile_size = meta.block_width;
     const std::string &compression = meta.compression;
@@ -449,10 +453,12 @@ static double CachedPixelValue(RasterValueLocalState &cache, const string_t &ban
     bool is_image = interleaved && (compression == "jpeg" || compression == "webp");
     if (compression != "gzip" && !is_image) {
         if (!interleaved) {
-            return raquet::decode_pixel(raw, band.GetSize(), dtype, pixel_x, pixel_y, tile_size, false);
+            value = raquet::decode_pixel(raw, band.GetSize(), dtype, pixel_x, pixel_y, tile_size, false);
+            return true;
         }
-        return raquet::decode_pixel_interleaved(raw, band.GetSize(), dtype, pixel_x, pixel_y, tile_size,
+        value = raquet::decode_pixel_interleaved(raw, band.GetSize(), dtype, pixel_x, pixel_y, tile_size,
                                                 band_idx, meta.num_bands(), compression);
+        return true;
     }
 
     if (!cache.IsCachedTile(band)) {
@@ -478,19 +484,25 @@ static double CachedPixelValue(RasterValueLocalState &cache, const string_t &ban
 
     const uint8_t *data = cache.tile_data.data();
     size_t size = cache.tile_data.size();
+    if (size == 0) {
+        return false;
+    }
     if (!interleaved) {
-        return raquet::decode_pixel(data, size, dtype, pixel_x, pixel_y, tile_size, false);
+        value = raquet::decode_pixel(data, size, dtype, pixel_x, pixel_y, tile_size, false);
+        return true;
     }
     if (cache.tile_channels > 0) {
         // JPEG/WebP decode to uint8 pixels with one byte per channel
         if (band_idx >= cache.tile_channels) {
             throw std::invalid_argument("Band index exceeds " + compression + " channels");
         }
-        return raquet::decode_pixel_interleaved(data, size, "uint8", pixel_x, pixel_y, cache.tile_width,
+        value = raquet::decode_pixel_interleaved(data, size, "uint8", pixel_x, pixel_y, cache.tile_width,
                                                 band_idx, cache.tile_channels, "none");
+        return true;
     }
-    return raquet::decode_pixel_interleaved(data, size, dtype, pixel_x, pixel_y, tile_size,
+    value = raquet::decode_pixel_interleaved(data, size, dtype, pixel_x, pixel_y, tile_size,
                                             band_idx, meta.num_bands(), "none");
+    return true;
 }
 
 // Shared body of both ST_RasterValue overloads; with no band name, band 0 is read
@@ -516,9 +528,9 @@ static void STRasterValueExecute(DataChunk &args, ExpressionState &state, Vector
     } keep_tile_bytes {cache};
 
     // Visit the rows grouped by tile, so each distinct tile in the chunk is
-    // decompressed once even when the rows are not sorted by block. Equal tiles
-    // have equal sizes, so sorting by (size, address) makes them adjacent even
-    // when the rows do not share the same copy of the bytes.
+    // decompressed once even when the rows are not sorted by block. Sorting by
+    // (size, address) puts rows sharing one copy of a tile together, and keeps
+    // separate copies of a tile close, since equal tiles have equal sizes.
     auto &order = cache.row_order;
     order.resize(args.size());
     for (idx_t i = 0; i < args.size(); i++) {
@@ -539,7 +551,9 @@ static void STRasterValueExecute(DataChunk &args, ExpressionState &state, Vector
             continue;
         }
         auto block = block_data[i];
-        auto band = band_data[i];
+        // By reference: the tile cache keys on GetData(), which for short inlined
+        // blobs points into the string_t itself and must stay valid for the chunk
+        const string_t &band = band_data[i];
         auto geom = geom_data[i];
 
         if (band.GetSize() == 0) {
@@ -584,7 +598,11 @@ static void STRasterValueExecute(DataChunk &args, ExpressionState &state, Vector
                 continue;
             }
 
-            double value = CachedPixelValue(cache, band, meta, dtype, band_idx, pixel_x, pixel_y);
+            double value;
+            if (!CachedPixelValue(cache, band, meta, dtype, band_idx, pixel_x, pixel_y, value)) {
+                result_mask.SetInvalid(i);
+                continue;
+            }
 
             // Check for NODATA value and return NULL if matched
             if (band_idx < static_cast<int32_t>(meta.band_info.size()) && meta.is_nodata(band_idx, value)) {
