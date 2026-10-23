@@ -283,8 +283,10 @@ FROM read_raquet('output.parquet');
   take effect at that granularity: `ROW_GROUP_SIZE 1` writes one tile per row group.
 - **`ORDER BY block` sorts the whole output in memory.** On DuckDB 2.0 this runs out of memory
   for large inputs, even with `temp_directory` set. When the output approaches the available
-  memory, write it without `ORDER BY`. Unsorted files are valid raquet, but row-group pruning
-  by `block` is less effective on them.
+  memory, write it without `ORDER BY`. Unsorted files are valid raquet; their row groups span
+  wider `block` ranges, so keep the row groups small (`ROW_GROUP_SIZE_BYTES`) to keep pruning
+  by `block` effective. `ORDER BY` also re-chunks the output into 2,048-row chunks, so the
+  row-group options above no longer split it finely.
 - **GDAL's block cache is not counted in `memory_limit`.** Its default size is a share of
   system RAM, and with many threads it can exceed DuckDB's own usage. Cap it with the
   `GDAL_CACHEMAX` environment variable (in MB) if the process must fit a hard budget, at the
