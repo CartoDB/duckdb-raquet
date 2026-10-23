@@ -229,3 +229,45 @@ SELECT list_contains(
     quadbin_from_lonlat(-10, 10, 4));
 ----
 false
+
+# =============================================================================
+# 'intersects' does not count cells that only touch the geometry.
+# =============================================================================
+
+# Box with edges on the zoom-3 grid lines lon -45 / 45 and lat 0: only the two
+# cells it covers, not the neighbours across those lines
+query I
+SELECT list_sort(QUADBIN_POLYFILL('POLYGON((-45 0, 45 0, 45 40, -45 40, -45 0))'::GEOMETRY, 3, 'intersects'))
+    = list_sort([quadbin_from_tile(3, 3, 3), quadbin_from_tile(4, 3, 3)]);
+----
+true
+
+# A cell's own boundary polygon (exact bbox doubles; quadbin_to_wkt rounds to
+# 12 decimals, which can spill into a neighbour) fills exactly that cell
+query I
+WITH b AS (SELECT quadbin_to_bbox(quadbin_from_tile(70, 50, 7)) AS b)
+SELECT QUADBIN_POLYFILL(('POLYGON((' || b.min_lon || ' ' || b.min_lat || ', ' || b.max_lon || ' ' || b.min_lat || ', '
+                         || b.max_lon || ' ' || b.max_lat || ', ' || b.min_lon || ' ' || b.max_lat || ', '
+                         || b.min_lon || ' ' || b.min_lat || '))')::GEOMETRY, 7, 'intersects')
+    = [quadbin_from_tile(70, 50, 7)]
+FROM (SELECT unnest(b) FROM b) b;
+----
+true
+
+# A POINT on grid lines gets the single cell quadbin_from_lonlat assigns it to
+query I
+SELECT QUADBIN_POLYFILL('POINT(0 0)'::GEOMETRY, 1, 'intersects') = [quadbin_from_lonlat(0, 0, 1)];
+----
+true
+
+query I
+SELECT QUADBIN_POLYFILL('POINT(-45 0)'::GEOMETRY, 3, 'intersects') = [quadbin_from_lonlat(-45, 0, 3)];
+----
+true
+
+# A MULTIPOLYGON of two tiny polygons in different cells finds both cells
+query I
+SELECT list_sort(QUADBIN_POLYFILL('MULTIPOLYGON(((-3.70 40.41, -3.69 40.41, -3.69 40.42, -3.70 40.41)), ((2.15 41.38, 2.16 41.38, 2.16 41.39, 2.15 41.38)))'::GEOMETRY, 8, 'intersects'))
+    = list_sort([quadbin_from_lonlat(-3.695, 40.414, 8), quadbin_from_lonlat(2.157, 41.383, 8)]);
+----
+true

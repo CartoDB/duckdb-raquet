@@ -366,10 +366,11 @@ static std::vector<std::vector<double>> ExtractRings(const string_t &geom) {
     return rings;
 }
 
-// Check if segment (x1,y1)-(x2,y2) touches the closed rectangle (Liang-Barsky clipping).
-// A degenerate segment (a single point) touches it when the point lies inside.
-static bool SegmentIntersectsRect(double x1, double y1, double x2, double y2,
-                                  double min_x, double min_y, double max_x, double max_y) {
+// Check if segment (x1,y1)-(x2,y2) passes through the interior of the rectangle.
+// Contact with the boundary only (an edge lying on a grid line, or touching a
+// corner) does not count, so cells that merely touch the geometry are excluded.
+static bool SegmentCrossesRectInterior(double x1, double y1, double x2, double y2,
+                                       double min_x, double min_y, double max_x, double max_y) {
     double dx = x2 - x1;
     double dy = y2 - y1;
     double t0 = 0.0, t1 = 1.0;
@@ -389,23 +390,22 @@ static bool SegmentIntersectsRect(double x1, double y1, double x2, double y2,
             }
         }
     }
-    return true;
+    // The clipped part is a chord of the closed rectangle: it reaches the
+    // interior iff its midpoint does (unless it lies along the boundary)
+    double tm = (t0 + t1) / 2.0;
+    double mx = x1 + tm * dx;
+    double my = y1 + tm * dy;
+    return mx > min_x && mx < max_x && my > min_y && my < max_y;
 }
 
-// Check if any ring edge (or a lone vertex) touches the rectangle
-static bool RingsIntersectRect(const std::vector<std::vector<double>>& rings,
-                               double min_x, double min_y, double max_x, double max_y) {
+// Check if any ring edge passes through the interior of the rectangle
+static bool RingsCrossRectInterior(const std::vector<std::vector<double>>& rings,
+                                   double min_x, double min_y, double max_x, double max_y) {
     for (const auto& ring : rings) {
         size_t n = ring.size() / 2;
-        if (n == 1) {
-            if (SegmentIntersectsRect(ring[0], ring[1], ring[0], ring[1], min_x, min_y, max_x, max_y)) {
-                return true;
-            }
-            continue;
-        }
         for (size_t i = 0; i + 1 < n; i++) {
-            if (SegmentIntersectsRect(ring[i * 2], ring[i * 2 + 1], ring[i * 2 + 2], ring[i * 2 + 3],
-                                      min_x, min_y, max_x, max_y)) {
+            if (SegmentCrossesRectInterior(ring[i * 2], ring[i * 2 + 1], ring[i * 2 + 2], ring[i * 2 + 3],
+                                           min_x, min_y, max_x, max_y)) {
                 return true;
             }
         }
@@ -448,6 +448,12 @@ static std::vector<uint64_t> ComputePolyfill(const string_t &geom, int resolutio
     std::vector<std::vector<double>> rings;
     if (mode == PolyfillMode::INTERSECTS) {
         rings = ExtractRings(geom);
+        // A POINT intersects the one cell quadbin_from_lonlat assigns it to,
+        // even when it lies exactly on a cell boundary
+        if (rings.size() == 1 && rings[0].size() == 2) {
+            result.push_back(quadbin::tile_to_cell(min_tile_x, min_tile_y, resolution));
+            return result;
+        }
     }
 
     // Iterate all tiles in bbox range
@@ -468,10 +474,10 @@ static std::vector<uint64_t> ComputePolyfill(const string_t &geom, int resolutio
                     break;
                 }
                 case PolyfillMode::INTERSECTS: {
-                    // The tile intersects the geometry iff a geometry edge touches the tile
-                    // (this covers geometries smaller than a tile), or the tile lies wholly
-                    // inside the geometry, in which case its center is inside too.
-                    if (RingsIntersectRect(rings, tile_min_lon, tile_min_lat, tile_max_lon, tile_max_lat)) {
+                    // The tile intersects the geometry iff a geometry edge passes through the
+                    // tile's interior (this covers geometries smaller than a tile), or the tile
+                    // lies wholly inside the geometry, in which case its center is inside too.
+                    if (RingsCrossRectInterior(rings, tile_min_lon, tile_min_lat, tile_max_lon, tile_max_lat)) {
                         include = true;
                     } else {
                         double center_lon = (tile_min_lon + tile_max_lon) / 2.0;
