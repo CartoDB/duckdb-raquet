@@ -1701,10 +1701,9 @@ static unique_ptr<LocalTableFunctionState> ReadRasterInitLocal(ExecutionContext 
 // ─────────────────────────────────────────────
 // Output chunks stop growing once they hold this many bytes of tile data
 // (always at least one row). Rows are large (a 256x256 float32 tile is
-// 256 KiB uncompressed), and DuckDB's Parquet writer only checks
-// ROW_GROUP_SIZE / ROW_GROUP_SIZE_BYTES between chunks: with full 2048-row
-// chunks a file comes out as one or a few huge row groups, all buffered in
-// memory before they are written (issues #36, #38).
+// 256 KiB uncompressed), so a full 2048-row chunk would hold up to 512 MiB
+// per thread, and the Parquet writer only checks ROW_GROUP_SIZE (rows)
+// between chunks.
 static constexpr idx_t MAX_CHUNK_TILE_BYTES = idx_t(256) << 10;
 
 static idx_t TileDataBytes(const TileData &tile_data) {

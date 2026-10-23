@@ -277,16 +277,18 @@ FROM read_raquet('output.parquet');
 **Large inputs (memory):** raquet rows are large (a 256×256 float32 tile is 256 KiB with
 `compression='none'`), so a conversion's memory use is dominated by how the output is buffered:
 
-- **Always set `ROW_GROUP_SIZE_BYTES` (or `ROW_GROUP_SIZE`) on the `COPY`.** With the default
-  row group size (122,880 rows) the Parquet writer holds the whole file in memory before
-  writing it. `read_raster` emits chunks of at most ~256 KiB of tile data, so these options
-  take effect at that granularity: `ROW_GROUP_SIZE 1` writes one tile per row group.
+- **Always set `ROW_GROUP_SIZE_BYTES` on the `COPY`.** With the default row group size
+  (122,880 rows) the Parquet writer holds the whole file in memory before writing it.
+  `ROW_GROUP_SIZE_BYTES` splits row groups at row granularity, also after an `ORDER BY`
+  (`ROW_GROUP_SIZE_BYTES 1` writes one tile per row group). The row-count `ROW_GROUP_SIZE`
+  is only checked between chunks; `read_raster` emits chunks of at most ~256 KiB of tile
+  data, so it takes effect at that granularity on `read_raster` output, but not after an
+  `ORDER BY`, which re-chunks rows into 2,048-row chunks.
 - **`ORDER BY block` sorts the whole output in memory.** On DuckDB 2.0 this runs out of memory
   for large inputs, even with `temp_directory` set. When the output approaches the available
   memory, write it without `ORDER BY`. Unsorted files are valid raquet; their row groups span
   wider `block` ranges, so keep the row groups small (`ROW_GROUP_SIZE_BYTES`) to keep pruning
-  by `block` effective. `ORDER BY` also re-chunks the output into 2,048-row chunks, so the
-  row-group options above no longer split it finely.
+  by `block` effective.
 - **GDAL's block cache is not counted in `memory_limit`.** Its default size is a share of
   system RAM, and with many threads it can exceed DuckDB's own usage. Cap it with the
   `GDAL_CACHEMAX` environment variable (in MB) if the process must fit a hard budget, at the
@@ -304,7 +306,8 @@ Measured on DuckDB 2.0.0, a 4°×4° mosaic of 16 Copernicus GLO-30 tiles (14,40
 | same, with `GDAL_CACHEMAX=128` | ✅ | 43 s | 1.8 GB |
 
 ```sql
-SET memory_limit = '8GB';
+-- Run with GDAL_CACHEMAX=128 in the environment to keep GDAL's cache within budget
+SET memory_limit = '1.5GB';
 SET preserve_insertion_order = false;
 COPY (SELECT * FROM read_raster('mosaic.vrt', compression='none', max_zoom=12))
 TO 'mosaic.parquet' (FORMAT parquet, ROW_GROUP_SIZE_BYTES '64MB');

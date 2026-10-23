@@ -4,8 +4,10 @@
 #              (issues #36, #38). With full 2048-row chunks the writer only
 #              checks the row-group size between chunks, and a whole
 #              conversion came out as one or a few row groups.
-#              test_palette.tif at max_zoom=18 gives 336 uint8 tiles of
-#              64 KiB each (compression='none'), so a chunk holds 4 tiles.
+#              test_palette.tif at max_zoom=18 gives 335 uint8 tiles of
+#              64 KiB each (compression='none') plus the metadata row, so a
+#              chunk holds 4 tiles. ROW_GROUP_SIZE_BYTES does not need this
+#              (the writer splits it within chunks); the row count does.
 # group: [raquet]
 
 require raquet
