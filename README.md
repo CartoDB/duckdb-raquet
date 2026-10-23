@@ -530,6 +530,56 @@ FROM ST_Raster(
 );
 ```
 
+### Writing Files for Iceberg and Remote Point Lookups
+
+When a raquet file is read remotely by point (an Iceberg table, or Parquet over HTTP), the
+file layout decides how much a query downloads: a reader fetches whole row groups, so a file
+with one huge row group downloads entirely for a single pixel.
+
+```sql
+SET preserve_insertion_order = false;
+COPY (
+    SELECT block::BIGINT AS block, * EXCLUDE (block)
+    FROM read_raster('dem.tif', compression='none')
+) TO 'dem.parquet' (FORMAT parquet, ROW_GROUP_SIZE 1);
+```
+
+- **One tile per row group:** `ROW_GROUP_SIZE 1`. `read_raster` emits small chunks, so the
+  writer can honor it (one uncompressed 256×256 float32 tile per row group; a few tiles when
+  they are smaller). Use `ROW_GROUP_SIZE_BYTES` for larger groups.
+- **No `ORDER BY` needed:** with one tile per row group, each row group's `block` min/max
+  statistics hold a single value, so readers skip row groups exactly whatever the row order.
+  Adding `ORDER BY block` would defeat `ROW_GROUP_SIZE`: the sort emits its output in
+  2,048-row chunks, and the writer only splits row groups between chunks.
+- **Signed `block` (`BIGINT`):** Iceberg has no unsigned types. QUADBIN cell ids fit in a
+  signed 64-bit integer, so the cast above is lossless. `read_raquet`, `read_raquet_at`,
+  `ST_Raster` and `ST_RasterAt` accept a signed `block` column; scalar functions take
+  `UBIGINT`, so pass them `block::UBIGINT` (e.g.
+  `ST_RasterValue(block::UBIGINT, band_1, point, metadata)`).
+- **`compression='none'` for point lookups:** a point read then needs no tile decode, and
+  Parquet's own page compression still applies to the column. On a Copernicus GLO-30 tile
+  (192 tiles), `compression='none'` gives a 44.6 MB file against 33.8 MB with gzip tiles,
+  and 100,000 `ST_RasterValue` lookups take 0.06 s against 1–27 s.
+- **Smaller data types:** if the values allow it, convert the source to a smaller type first
+  (e.g. `gdal_translate -ot Int16` for an integer DEM); `read_raster` keeps the source type.
+- **Footer size:** DuckDB writes min/max statistics for every column, including truncated
+  1 KiB prefixes of the band BLOBs, and has no option to disable them per column. With one
+  tile per row group the footer takes ~1.2 KB per row group (~1.8 KB with
+  `statistics=true`). A writer that can restrict statistics to `block` (e.g. pyarrow's
+  `write_statistics=['block']`) produces a much smaller footer.
+
+For batches of points, store them sorted by `block` before calling `ST_RasterValue`: it
+decodes each tile once per chunk of rows, so points grouped by tile are decoded together.
+
+```sql
+CREATE TABLE points_by_block AS
+SELECT *, quadbin_from_lonlat(lon, lat, 12) AS blk FROM points ORDER BY blk;
+
+SELECT p.id, ST_RasterValue(r.block::UBIGINT, r.band_1, p.geom, r.metadata) AS value
+FROM points_by_block p
+JOIN read_raquet('dem.parquet') r ON r.block = p.blk;
+```
+
 ### Time-Series Rasters
 
 ```sql
