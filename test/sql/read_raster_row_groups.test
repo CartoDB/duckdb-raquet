@@ -1,0 +1,27 @@
+# name: test/sql/read_raster_row_groups.test
+# description: read_raster() emits output chunks of at most ~256 KiB of tile
+#              data, so the Parquet writer's ROW_GROUP_SIZE takes effect
+#              (issues #36, #38). With full 2048-row chunks the writer only
+#              checks the row-group size between chunks, and a whole
+#              conversion came out as one or a few row groups.
+#              test_palette.tif at max_zoom=18 gives 336 uint8 tiles of
+#              64 KiB each (compression='none'), so a chunk holds 4 tiles.
+# group: [raquet]
+
+require raquet
+
+require parquet
+
+require-env RAQUET_TEST_GDAL
+
+statement ok
+COPY (SELECT * FROM read_raster('test/data/test_palette.tif', max_zoom=18, compression='none'))
+TO '__TEST_DIR__/row_groups.parquet' (FORMAT parquet, ROW_GROUP_SIZE 1);
+
+# Chunks can come out shorter when threads split the tiles, so bound the
+# row-group count from below instead of matching it exactly
+query III
+SELECT count(*) >= 84, max(row_group_num_rows) <= 4, sum(row_group_num_rows)
+FROM (SELECT DISTINCT row_group_id, row_group_num_rows FROM parquet_metadata('__TEST_DIR__/row_groups.parquet'));
+----
+true	true	336

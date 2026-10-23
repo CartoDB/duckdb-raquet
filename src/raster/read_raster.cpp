@@ -1699,6 +1699,22 @@ static unique_ptr<LocalTableFunctionState> ReadRasterInitLocal(ExecutionContext 
 // ─────────────────────────────────────────────
 // Helper: Emit a tile row into the output DataChunk
 // ─────────────────────────────────────────────
+// Output chunks stop growing once they hold this many bytes of tile data
+// (always at least one row). Rows are large (a 256x256 float32 tile is
+// 256 KiB uncompressed), and DuckDB's Parquet writer only checks
+// ROW_GROUP_SIZE / ROW_GROUP_SIZE_BYTES between chunks: with full 2048-row
+// chunks a file comes out as one or a few huge row groups, all buffered in
+// memory before they are written (issues #36, #38).
+static constexpr idx_t MAX_CHUNK_TILE_BYTES = idx_t(256) << 10;
+
+static idx_t TileDataBytes(const TileData &tile_data) {
+    idx_t bytes = 0;
+    for (auto &band : tile_data.compressed) {
+        bytes += band.size();
+    }
+    return bytes;
+}
+
 static void EmitTileRow(DataChunk &output, idx_t row_count,
                          const ReadRasterBindData &bind_data,
                          uint64_t block, const TileData &tile_data) {
@@ -1780,9 +1796,10 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
 
     idx_t row_count = 0;
     idx_t max_rows = STANDARD_VECTOR_SIZE;
+    idx_t chunk_bytes = 0;
 
     // ── Phase 1: Native-zoom tiles (parallel) ──
-    while (row_count < max_rows) {
+    while (row_count < max_rows && chunk_bytes < MAX_CHUNK_TILE_BYTES) {
         // Grab next tile from shared queue
         idx_t my_idx;
         {
@@ -1858,6 +1875,7 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
 
                 uint64_t block = quadbin::tile_to_cell(tile.x, tile.y, tile.z);
                 EmitTileRow(output, row_count, bind_data, block, tile_data);
+                chunk_bytes += TileDataBytes(tile_data);
                 state.total_blocks++;
                 row_count++;
             }
@@ -2120,14 +2138,18 @@ static void ReadRasterExecuteImpl(ClientContext &context, TableFunctionInput &da
     //    over-increment past .size() (those return without emitting), which is
     //    fine — we only need >= size() to mean "drained" for the metadata gate.
     const idx_t overview_total = state.overview_results.size();
-    while (row_count + 1 < max_rows) {
+    while (row_count + 1 < max_rows && chunk_bytes < MAX_CHUNK_TILE_BYTES) {
         idx_t my_idx = state.overview_drain_idx.fetch_add(1, std::memory_order_acq_rel);
         if (my_idx >= overview_total) {
             break;
         }
         auto &result = state.overview_results[my_idx];
         EmitTileRow(output, row_count, bind_data, result.block, result.tile_data);
+        chunk_bytes += TileDataBytes(result.tile_data);
         row_count++;
+        // The row now owns a copy of the bytes, and this index is ours alone:
+        // release the staged tile instead of holding it until the scan ends
+        result.tile_data = TileData();
     }
 
     // If the overview queue still has tiles to drain, leave metadata for a
