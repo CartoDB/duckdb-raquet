@@ -82,13 +82,13 @@ static bool ExtractGeometryBoundingBox(const string_t &geom, double &min_x, doub
             memcpy(&num_points, data + offset, 4);
             offset += 4;
 
-            if (size < offset + num_points * 16) return false;
+            if (size < offset + idx_t(num_points) * 16) return false;
             for (uint32_t p = 0; p < num_points; p++) {
                 double x = read_double_le(offset + p * 16);
                 double y = read_double_le(offset + p * 16 + 8);
                 update_bounds(x, y);
             }
-            offset += num_points * 16;
+            offset += idx_t(num_points) * 16;
         }
         return true;
     } else if (base_type == 6) {  // MULTIPOLYGON
@@ -122,13 +122,13 @@ static bool ExtractGeometryBoundingBox(const string_t &geom, double &min_x, doub
                 memcpy(&num_points, data + offset, 4);
                 offset += 4;
 
-                if (size < offset + num_points * 16) return false;
+                if (size < offset + idx_t(num_points) * 16) return false;
                 for (uint32_t p = 0; p < num_points; p++) {
                     double x = read_double_le(offset + p * 16);
                     double y = read_double_le(offset + p * 16 + 8);
                     update_bounds(x, y);
                 }
-                offset += num_points * 16;
+                offset += idx_t(num_points) * 16;
             }
         }
         return true;
@@ -193,14 +193,14 @@ static bool PointInPolygon(double px, double py, const uint8_t* data, idx_t& off
     memcpy(&outer_points, data + offset, 4);
     offset += 4;
 
-    if (size < offset + outer_points * 16) return false;
+    if (size < offset + idx_t(outer_points) * 16) return false;
 
-    std::vector<double> outer_coords(outer_points * 2);
+    std::vector<double> outer_coords(idx_t(outer_points) * 2);
     for (uint32_t i = 0; i < outer_points; i++) {
         memcpy(&outer_coords[i * 2], data + offset + i * 16, 8);
         memcpy(&outer_coords[i * 2 + 1], data + offset + i * 16 + 8, 8);
     }
-    offset += outer_points * 16;
+    offset += idx_t(outer_points) * 16;
 
     // Check if inside outer boundary
     if (!PointInRing(px, py, outer_coords.data(), outer_points)) {
@@ -209,7 +209,7 @@ static bool PointInPolygon(double px, double py, const uint8_t* data, idx_t& off
             if (size < offset + 4) return false;
             uint32_t ring_points;
             memcpy(&ring_points, data + offset, 4);
-            offset += 4 + ring_points * 16;
+            offset += 4 + idx_t(ring_points) * 16;
         }
         return false;
     }
@@ -221,14 +221,14 @@ static bool PointInPolygon(double px, double py, const uint8_t* data, idx_t& off
         memcpy(&hole_points, data + offset, 4);
         offset += 4;
 
-        if (size < offset + hole_points * 16) return false;
+        if (size < offset + idx_t(hole_points) * 16) return false;
 
-        std::vector<double> hole_coords(hole_points * 2);
+        std::vector<double> hole_coords(idx_t(hole_points) * 2);
         for (uint32_t i = 0; i < hole_points; i++) {
             memcpy(&hole_coords[i * 2], data + offset + i * 16, 8);
             memcpy(&hole_coords[i * 2 + 1], data + offset + i * 16 + 8, 8);
         }
-        offset += hole_points * 16;
+        offset += idx_t(hole_points) * 16;
 
         if (PointInRing(px, py, hole_coords.data(), hole_points)) {
             return false;  // Inside a hole
@@ -294,6 +294,125 @@ static bool BBoxIntersects(double ax1, double ay1, double ax2, double ay2,
     return !(ax2 < bx1 || ax1 > bx2 || ay2 < by1 || ay1 > by2);
 }
 
+// Read one ring's coordinates as a flat [x0, y0, x1, y1, ...] list
+static bool ReadRing(const uint8_t* data, idx_t& offset, idx_t size, std::vector<double>& ring) {
+    if (size < offset + 4) return false;
+    uint32_t num_points;
+    memcpy(&num_points, data + offset, 4);
+    offset += 4;
+
+    if (size < offset + idx_t(num_points) * 16) return false;
+    ring.resize(idx_t(num_points) * 2);
+    for (uint32_t i = 0; i < num_points; i++) {
+        memcpy(&ring[i * 2], data + offset + i * 16, 8);
+        memcpy(&ring[i * 2 + 1], data + offset + i * 16 + 8, 8);
+    }
+    offset += idx_t(num_points) * 16;
+    return true;
+}
+
+// Extract the rings of a POLYGON or MULTIPOLYGON (a POINT becomes a one-vertex ring)
+static std::vector<std::vector<double>> ExtractRings(const string_t &geom) {
+    std::vector<std::vector<double>> rings;
+    const uint8_t *data = reinterpret_cast<const uint8_t*>(geom.GetData());
+    idx_t size = geom.GetSize();
+    if (size < 5) return rings;
+
+    uint32_t geom_type;
+    memcpy(&geom_type, data + 1, 4);
+    uint32_t base_type = geom_type & 0xFF;
+    idx_t offset = 5;
+    if (geom_type & 0x20000000) {
+        offset += 4;
+    }
+
+    auto read_polygon = [&](idx_t& pos) -> bool {
+        if (size < pos + 4) return false;
+        uint32_t num_rings;
+        memcpy(&num_rings, data + pos, 4);
+        pos += 4;
+        for (uint32_t r = 0; r < num_rings; r++) {
+            std::vector<double> ring;
+            if (!ReadRing(data, pos, size, ring)) return false;
+            rings.push_back(std::move(ring));
+        }
+        return true;
+    };
+
+    if (base_type == 1) {  // POINT
+        if (size < offset + 16) return rings;
+        std::vector<double> ring(2);
+        memcpy(&ring[0], data + offset, 8);
+        memcpy(&ring[1], data + offset + 8, 8);
+        rings.push_back(std::move(ring));
+    } else if (base_type == 3) {  // POLYGON
+        read_polygon(offset);
+    } else if (base_type == 6) {  // MULTIPOLYGON
+        if (size < offset + 4) return rings;
+        uint32_t num_polygons;
+        memcpy(&num_polygons, data + offset, 4);
+        offset += 4;
+        for (uint32_t poly = 0; poly < num_polygons; poly++) {
+            if (size < offset + 5) return rings;
+            uint32_t poly_type;
+            memcpy(&poly_type, data + offset + 1, 4);
+            offset += 5;
+            if (poly_type & 0x20000000) {
+                offset += 4;
+            }
+            if (!read_polygon(offset)) return rings;
+        }
+    }
+    return rings;
+}
+
+// Check if segment (x1,y1)-(x2,y2) touches the closed rectangle (Liang-Barsky clipping).
+// A degenerate segment (a single point) touches it when the point lies inside.
+static bool SegmentIntersectsRect(double x1, double y1, double x2, double y2,
+                                  double min_x, double min_y, double max_x, double max_y) {
+    double dx = x2 - x1;
+    double dy = y2 - y1;
+    double t0 = 0.0, t1 = 1.0;
+    const double p[4] = {-dx, dx, -dy, dy};
+    const double q[4] = {x1 - min_x, max_x - x1, y1 - min_y, max_y - y1};
+    for (int i = 0; i < 4; i++) {
+        if (p[i] == 0.0) {
+            if (q[i] < 0.0) return false;  // Parallel to this edge and outside it
+        } else {
+            double t = q[i] / p[i];
+            if (p[i] < 0.0) {
+                if (t > t1) return false;
+                if (t > t0) t0 = t;
+            } else {
+                if (t < t0) return false;
+                if (t < t1) t1 = t;
+            }
+        }
+    }
+    return true;
+}
+
+// Check if any ring edge (or a lone vertex) touches the rectangle
+static bool RingsIntersectRect(const std::vector<std::vector<double>>& rings,
+                               double min_x, double min_y, double max_x, double max_y) {
+    for (const auto& ring : rings) {
+        size_t n = ring.size() / 2;
+        if (n == 1) {
+            if (SegmentIntersectsRect(ring[0], ring[1], ring[0], ring[1], min_x, min_y, max_x, max_y)) {
+                return true;
+            }
+            continue;
+        }
+        for (size_t i = 0; i + 1 < n; i++) {
+            if (SegmentIntersectsRect(ring[i * 2], ring[i * 2 + 1], ring[i * 2 + 2], ring[i * 2 + 3],
+                                      min_x, min_y, max_x, max_y)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 // ============================================================================
 // QUADBIN_POLYFILL Implementation
 // ============================================================================
@@ -326,6 +445,11 @@ static std::vector<uint64_t> ComputePolyfill(const string_t &geom, int resolutio
     quadbin::lonlat_to_tile(min_lon, max_lat, resolution, min_tile_x, min_tile_y);  // NW corner
     quadbin::lonlat_to_tile(max_lon, min_lat, resolution, max_tile_x, max_tile_y);  // SE corner
 
+    std::vector<std::vector<double>> rings;
+    if (mode == PolyfillMode::INTERSECTS) {
+        rings = ExtractRings(geom);
+    }
+
     // Iterate all tiles in bbox range
     for (int tile_y = min_tile_y; tile_y <= max_tile_y; tile_y++) {
         for (int tile_x = min_tile_x; tile_x <= max_tile_x; tile_x++) {
@@ -344,29 +468,15 @@ static std::vector<uint64_t> ComputePolyfill(const string_t &geom, int resolutio
                     break;
                 }
                 case PolyfillMode::INTERSECTS: {
-                    // Check if tile bbox intersects geometry bbox (already in bbox range)
-                    // Then check if any tile corner is inside, or if geometry contains any tile corner,
-                    // or if tile and geometry overlap
-
-                    // Quick check: tile is in geometry bbox range, so at minimum they might intersect
-                    // Check tile corners
-                    bool any_corner_inside =
-                        PointInGeometry(tile_min_lon, tile_min_lat, geom) ||
-                        PointInGeometry(tile_max_lon, tile_min_lat, geom) ||
-                        PointInGeometry(tile_min_lon, tile_max_lat, geom) ||
-                        PointInGeometry(tile_max_lon, tile_max_lat, geom);
-
-                    if (any_corner_inside) {
+                    // The tile intersects the geometry iff a geometry edge touches the tile
+                    // (this covers geometries smaller than a tile), or the tile lies wholly
+                    // inside the geometry, in which case its center is inside too.
+                    if (RingsIntersectRect(rings, tile_min_lon, tile_min_lat, tile_max_lon, tile_max_lat)) {
                         include = true;
                     } else {
-                        // Check tile center (handles case where tile is fully contained)
                         double center_lon = (tile_min_lon + tile_max_lon) / 2.0;
                         double center_lat = (tile_min_lat + tile_max_lat) / 2.0;
                         include = PointInGeometry(center_lon, center_lat, geom);
-
-                        // TODO: For complete accuracy, we'd also need to check if any geometry
-                        // edge crosses the tile without any corner inside. For now, this handles
-                        // most practical cases.
                     }
                     break;
                 }

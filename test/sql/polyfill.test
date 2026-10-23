@@ -181,3 +181,51 @@ query I
 SELECT QUADBIN_POLYFILL(CAST(NULL AS GEOMETRY), 3) IS NULL;
 ----
 true
+
+# =============================================================================
+# 'intersects' with a geometry smaller than a cell (issue #35).
+# The 1°×0.9° box near Madrid lies inside 2 cells at zooms 5-7 and touches
+# no cell corner or center, so it must be found through its edges.
+# =============================================================================
+
+query IIIII
+SELECT
+    len(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 5, 'intersects')),
+    len(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 6, 'intersects')),
+    len(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 7, 'intersects')),
+    len(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 8, 'intersects')),
+    len(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 9, 'intersects'));
+----
+2	2	2	4	9
+
+# The cells returned are the ones the box's corners fall in.
+query I
+SELECT list_sort(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 6, 'intersects'))
+    = list_sort(list_distinct([
+        quadbin_from_lonlat(-4.3, 40.1, 6), quadbin_from_lonlat(-3.3, 40.1, 6),
+        quadbin_from_lonlat(-3.3, 41.0, 6), quadbin_from_lonlat(-4.3, 41.0, 6)]));
+----
+true
+
+# A tiny polygon inside a single cell at a high zoom.
+query I
+SELECT QUADBIN_POLYFILL('POLYGON((-3.70 40.41, -3.69 40.41, -3.69 40.42, -3.70 40.42, -3.70 40.41))'::GEOMETRY, 4, 'intersects')
+    = [quadbin_from_lonlat(-3.695, 40.415, 4)];
+----
+true
+
+# A POINT intersects the cell it falls in.
+query I
+SELECT QUADBIN_POLYFILL('POINT(-3.7 40.4)'::GEOMETRY, 10, 'intersects')
+    = [quadbin_from_lonlat(-3.7, 40.4, 10)];
+----
+true
+
+# A cell inside a polygon hole does not intersect the polygon
+# (zoom-4 cell lon -22.5..0, lat 0..21.9 lies wholly inside the hole).
+query I
+SELECT list_contains(
+    QUADBIN_POLYFILL('POLYGON((-80 -60, 80 -60, 80 60, -80 60, -80 -60), (-50 -40, 50 -40, 50 40, -50 40, -50 -40))'::GEOMETRY, 4, 'intersects'),
+    quadbin_from_lonlat(-10, 10, 4));
+----
+false
