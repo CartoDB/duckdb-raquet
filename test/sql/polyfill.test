@@ -181,3 +181,93 @@ query I
 SELECT QUADBIN_POLYFILL(CAST(NULL AS GEOMETRY), 3) IS NULL;
 ----
 true
+
+# =============================================================================
+# 'intersects' with a geometry smaller than a cell (issue #35).
+# The 1°×0.9° box near Madrid lies inside 2 cells at zooms 5-7 and touches
+# no cell corner or center, so it must be found through its edges.
+# =============================================================================
+
+query IIIII
+SELECT
+    len(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 5, 'intersects')),
+    len(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 6, 'intersects')),
+    len(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 7, 'intersects')),
+    len(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 8, 'intersects')),
+    len(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 9, 'intersects'));
+----
+2	2	2	4	9
+
+# The cells returned are the ones the box's corners fall in.
+query I
+SELECT list_sort(QUADBIN_POLYFILL('POLYGON((-4.3 40.1, -3.3 40.1, -3.3 41.0, -4.3 41.0, -4.3 40.1))'::GEOMETRY, 6, 'intersects'))
+    = list_sort(list_distinct([
+        quadbin_from_lonlat(-4.3, 40.1, 6), quadbin_from_lonlat(-3.3, 40.1, 6),
+        quadbin_from_lonlat(-3.3, 41.0, 6), quadbin_from_lonlat(-4.3, 41.0, 6)]));
+----
+true
+
+# A tiny polygon inside a single cell at a high zoom.
+query I
+SELECT QUADBIN_POLYFILL('POLYGON((-3.70 40.41, -3.69 40.41, -3.69 40.42, -3.70 40.42, -3.70 40.41))'::GEOMETRY, 4, 'intersects')
+    = [quadbin_from_lonlat(-3.695, 40.415, 4)];
+----
+true
+
+# A POINT intersects the cell it falls in.
+query I
+SELECT QUADBIN_POLYFILL('POINT(-3.7 40.4)'::GEOMETRY, 10, 'intersects')
+    = [quadbin_from_lonlat(-3.7, 40.4, 10)];
+----
+true
+
+# A cell inside a polygon hole does not intersect the polygon
+# (zoom-4 cell lon -22.5..0, lat 0..21.9 lies wholly inside the hole).
+query I
+SELECT list_contains(
+    QUADBIN_POLYFILL('POLYGON((-80 -60, 80 -60, 80 60, -80 60, -80 -60), (-50 -40, 50 -40, 50 40, -50 40, -50 -40))'::GEOMETRY, 4, 'intersects'),
+    quadbin_from_lonlat(-10, 10, 4));
+----
+false
+
+# =============================================================================
+# 'intersects' does not count cells that only touch the geometry.
+# =============================================================================
+
+# Box with edges on the zoom-3 grid lines lon -45 / 45 and lat 0: only the two
+# cells it covers, not the neighbours across those lines
+query I
+SELECT list_sort(QUADBIN_POLYFILL('POLYGON((-45 0, 45 0, 45 40, -45 40, -45 0))'::GEOMETRY, 3, 'intersects'))
+    = list_sort([quadbin_from_tile(3, 3, 3), quadbin_from_tile(4, 3, 3)]);
+----
+true
+
+# A cell's own boundary polygon (exact bbox doubles; quadbin_to_wkt rounds to
+# 12 decimals, which can spill into a neighbour) fills exactly that cell
+query I
+WITH b AS (SELECT quadbin_to_bbox(quadbin_from_tile(70, 50, 7)) AS b)
+SELECT QUADBIN_POLYFILL(('POLYGON((' || b.min_lon || ' ' || b.min_lat || ', ' || b.max_lon || ' ' || b.min_lat || ', '
+                         || b.max_lon || ' ' || b.max_lat || ', ' || b.min_lon || ' ' || b.max_lat || ', '
+                         || b.min_lon || ' ' || b.min_lat || '))')::GEOMETRY, 7, 'intersects')
+    = [quadbin_from_tile(70, 50, 7)]
+FROM (SELECT unnest(b) FROM b) b;
+----
+true
+
+# A POINT on grid lines gets the single cell quadbin_from_lonlat assigns it to
+query I
+SELECT QUADBIN_POLYFILL('POINT(0 0)'::GEOMETRY, 1, 'intersects') = [quadbin_from_lonlat(0, 0, 1)];
+----
+true
+
+query I
+SELECT QUADBIN_POLYFILL('POINT(-45 0)'::GEOMETRY, 3, 'intersects') = [quadbin_from_lonlat(-45, 0, 3)];
+----
+true
+
+# A MULTIPOLYGON of two tiny polygons in different cells finds both cells
+query I
+SELECT list_sort(QUADBIN_POLYFILL('MULTIPOLYGON(((-3.70 40.41, -3.69 40.41, -3.69 40.42, -3.70 40.41)), ((2.15 41.38, 2.16 41.38, 2.16 41.39, 2.15 41.38)))'::GEOMETRY, 8, 'intersects'))
+    = list_sort([quadbin_from_lonlat(-3.695, 40.414, 8), quadbin_from_lonlat(2.157, 41.383, 8)]);
+----
+true
