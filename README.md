@@ -541,16 +541,17 @@ SET preserve_insertion_order = false;
 COPY (
     SELECT block::BIGINT AS block, * EXCLUDE (block)
     FROM read_raster('dem.tif', compression='none')
-) TO 'dem.parquet' (FORMAT parquet, ROW_GROUP_SIZE 1);
+    ORDER BY block
+) TO 'dem.parquet' (FORMAT parquet, ROW_GROUP_SIZE_BYTES 1);
 ```
 
-- **One tile per row group:** `ROW_GROUP_SIZE 1`. `read_raster` emits small chunks, so the
-  writer can honor it (one uncompressed 256×256 float32 tile per row group; a few tiles when
-  they are smaller). Use `ROW_GROUP_SIZE_BYTES` for larger groups.
-- **No `ORDER BY` needed:** with one tile per row group, each row group's `block` min/max
-  statistics hold a single value, so readers skip row groups exactly whatever the row order.
-  Adding `ORDER BY block` would defeat `ROW_GROUP_SIZE`: the sort emits its output in
-  2,048-row chunks, and the writer only splits row groups between chunks.
+- **One tile per row group, in `block` order:** `ROW_GROUP_SIZE_BYTES 1` closes a row group
+  after every row, whatever the tile size, also after the `ORDER BY`. Use a larger value
+  (e.g. `'1MB'`) for a few tiles per row group. The row-count `ROW_GROUP_SIZE` is not a
+  substitute here: after an `ORDER BY` it is only checked between 2,048-row chunks.
+- **Inputs too large to sort:** drop the `ORDER BY` (see "Large inputs" under
+  `read_raster`). With one tile per row group, each row group's `block` min/max statistics
+  hold a single value, so readers still skip row groups exactly, whatever the row order.
 - **Signed `block` (`BIGINT`):** Iceberg has no unsigned types. QUADBIN cell ids fit in a
   signed 64-bit integer, so the cast above is lossless. `read_raquet`, `read_raquet_at`,
   `ST_Raster` and `ST_RasterAt` accept a signed `block` column; scalar functions take
