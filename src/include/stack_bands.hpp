@@ -4,8 +4,7 @@
 
 namespace duckdb {
 
-// Registers the `raquet_stack_bands(LIST<VARCHAR>)` table function, and
-// `raquet_merge_bands` as a deprecated alias (same behaviour, logs a warning).
+// Registers the `raquet_stack_bands(LIST<VARCHAR>)` table function.
 //
 // Takes a list of single-band raquet parquet paths and returns the
 // merged multi-band raquet content (one metadata row at block=0 with
@@ -19,6 +18,6 @@ namespace duckdb {
 // The data join is delegated to DuckDB's parallel hash join via an
 // internal Connection — this function is mostly orchestration and
 // metadata composition.
-void RegisterMergeBandsFunction(ExtensionLoader &loader);
+void RegisterStackBandsFunction(ExtensionLoader &loader);
 
 }  // namespace duckdb

@@ -1,11 +1,9 @@
-#include "merge_bands.hpp"
+#include "stack_bands.hpp"
 #include "raquet_metadata.hpp"
 
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/function/table_function.hpp"
-#include "duckdb/logging/logger.hpp"
-#include "duckdb/main/client_context.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/main/connection.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
@@ -37,7 +35,7 @@ static std::string SqlSingleQuote(const std::string &s) {
 // Read each input's metadata row via an internal Connection.
 // Returns the raw JSON strings; the caller parses them via parse_metadata.
 // ─────────────────────────────────────────────
-static std::vector<std::string> ReadMetadataJsons(ClientContext &context, const std::string &fn,
+static std::vector<std::string> ReadMetadataJsons(ClientContext &context,
                                                    const std::vector<std::string> &paths) {
     std::vector<std::string> jsons;
     jsons.reserve(paths.size());
@@ -49,18 +47,18 @@ static std::vector<std::string> ReadMetadataJsons(ClientContext &context, const 
         auto result = con.Query(q);
         if (result->HasError()) {
             throw InvalidInputException(
-                "%s: failed to read metadata from '%s': %s", fn,
+                "raquet_stack_bands: failed to read metadata from '%s': %s",
                 p, result->GetError());
         }
         auto chunk = result->Fetch();
         if (!chunk || chunk->size() == 0) {
             throw InvalidInputException(
-                "%s: '%s' has no metadata row (block=0)", fn, p);
+                "raquet_stack_bands: '%s' has no metadata row (block=0)", p);
         }
         Value v = chunk->GetValue(0, 0);
         if (v.IsNull()) {
             throw InvalidInputException(
-                "%s: '%s' has NULL metadata at block=0", fn, p);
+                "raquet_stack_bands: '%s' has NULL metadata at block=0", p);
         }
         jsons.push_back(v.GetValue<std::string>());
     }
@@ -87,15 +85,14 @@ static bool IsV05Format(const std::string &json) {
 // caller must overwrite via CountMergedBlocks before serialising.
 // ─────────────────────────────────────────────
 static raquet::RaquetMetadata BuildMergedMetadata(
-        const std::string &fn,
         const std::vector<std::string> &paths,
         const std::vector<raquet::RaquetMetadata> &metas) {
 
     for (size_t i = 0; i < metas.size(); i++) {
         if (metas[i].band_info.size() != 1) {
             throw InvalidInputException(
-                "%s: input '%s' has %d bands; only single-band "
-                "inputs are supported (use read_raster(..., bands='N') to produce them)", fn,
+                "raquet_stack_bands: input '%s' has %d bands; only single-band "
+                "inputs are supported (use read_raster(..., bands='N') to produce them)",
                 paths[i], static_cast<int>(metas[i].band_info.size()));
         }
     }
@@ -103,20 +100,20 @@ static raquet::RaquetMetadata BuildMergedMetadata(
     auto fail_str = [&](const std::string &name, const std::string &a,
                          const std::string &b, size_t i) {
         throw InvalidInputException(
-            "%s: '%s' differs between '%s' ('%s') and '%s' ('%s') — "
-            "all inputs must share the same spatial frame", fn,
+            "raquet_stack_bands: '%s' differs between '%s' ('%s') and '%s' ('%s') — "
+            "all inputs must share the same spatial frame",
             name, paths[0], a, paths[i], b);
     };
     auto fail_int = [&](const std::string &name, int a, int b, size_t i) {
         throw InvalidInputException(
-            "%s: '%s' differs between '%s' (%d) and '%s' (%d) — "
-            "all inputs must share the same spatial frame", fn,
+            "raquet_stack_bands: '%s' differs between '%s' (%d) and '%s' (%d) — "
+            "all inputs must share the same spatial frame",
             name, paths[0], a, paths[i], b);
     };
     auto fail_dbl = [&](const std::string &name, double a, double b, size_t i) {
         throw InvalidInputException(
-            "%s: '%s' differs between '%s' (%g) and '%s' (%g) — "
-            "all inputs must share the same spatial frame", fn,
+            "raquet_stack_bands: '%s' differs between '%s' (%g) and '%s' (%g) — "
+            "all inputs must share the same spatial frame",
             name, paths[0], a, paths[i], b);
     };
 
@@ -160,7 +157,7 @@ static raquet::RaquetMetadata BuildMergedMetadata(
 // Count distinct block IDs in the union of all inputs' data rows.
 // `num_blocks` in the merged metadata can't be inferred from any single
 // input — must be computed via a SQL union-dedup over all inputs.
-static int64_t CountMergedBlocks(ClientContext &context, const std::string &fn,
+static int64_t CountMergedBlocks(ClientContext &context,
                                   const std::vector<std::string> &paths) {
     if (paths.empty()) return 0;
 
@@ -177,7 +174,7 @@ static int64_t CountMergedBlocks(ClientContext &context, const std::string &fn,
     auto result = con.Query(sql.str());
     if (result->HasError()) {
         throw InvalidInputException(
-            "%s: failed to count merged blocks: %s", fn,
+            "raquet_stack_bands: failed to count merged blocks: %s",
             result->GetError());
     }
     auto chunk = result->Fetch();
@@ -217,14 +214,13 @@ static std::string BuildJoinSQL(const std::vector<std::string> &paths) {
 // ─────────────────────────────────────────────
 // Bind state
 // ─────────────────────────────────────────────
-struct RaquetMergeBandsBindData : public TableFunctionData {
-    std::string function_name;  // As called: raquet_stack_bands or its deprecated alias
+struct RaquetStackBandsBindData : public TableFunctionData {
     std::vector<std::string> input_paths;
     std::string merged_metadata;
     std::string join_sql;
 };
 
-struct RaquetMergeBandsGlobalState : public GlobalTableFunctionState {
+struct RaquetStackBandsGlobalState : public GlobalTableFunctionState {
     // Connection must outlive `result`; `result` must outlive
     // `current_chunk`. Field-declaration order encodes this.
     std::unique_ptr<Connection> connection;
@@ -242,34 +238,33 @@ struct RaquetMergeBandsGlobalState : public GlobalTableFunctionState {
 // the merged metadata, recompute num_blocks, build the data-join SQL,
 // publish the output schema.
 // ─────────────────────────────────────────────
-static unique_ptr<FunctionData> StackBandsBind(
+static unique_ptr<FunctionData> RaquetStackBandsBind(
         ClientContext &context, TableFunctionBindInput &input,
-        vector<LogicalType> &return_types, vector<Identifier> &names, const std::string &fn) {
+        vector<LogicalType> &return_types, vector<Identifier> &names) {
 
     if (input.inputs.empty()) {
-        throw InvalidInputException("%s: missing input list", fn);
+        throw InvalidInputException("raquet_stack_bands: missing input list");
     }
     auto &list_value = input.inputs[0];
     if (list_value.IsNull()) {
-        throw InvalidInputException("%s: input list cannot be NULL", fn);
+        throw InvalidInputException("raquet_stack_bands: input list cannot be NULL");
     }
 
     auto &paths_values = ListValue::GetChildren(list_value);
     if (paths_values.empty()) {
-        throw InvalidInputException("%s: input list is empty", fn);
+        throw InvalidInputException("raquet_stack_bands: input list is empty");
     }
 
-    auto bind_data = make_uniq<RaquetMergeBandsBindData>();
-    bind_data->function_name = fn;
+    auto bind_data = make_uniq<RaquetStackBandsBindData>();
     bind_data->input_paths.reserve(paths_values.size());
     for (const auto &v : paths_values) {
         if (v.IsNull()) {
-            throw InvalidInputException("%s: input list contains NULL paths", fn);
+            throw InvalidInputException("raquet_stack_bands: input list contains NULL paths");
         }
         bind_data->input_paths.push_back(v.GetValue<std::string>());
     }
 
-    auto jsons = ReadMetadataJsons(context, fn, bind_data->input_paths);
+    auto jsons = ReadMetadataJsons(context, bind_data->input_paths);
 
     std::vector<raquet::RaquetMetadata> metas;
     metas.reserve(jsons.size());
@@ -277,9 +272,9 @@ static unique_ptr<FunctionData> StackBandsBind(
         metas.push_back(raquet::parse_metadata(j));
     }
 
-    auto merged = BuildMergedMetadata(fn, bind_data->input_paths, metas);
+    auto merged = BuildMergedMetadata(bind_data->input_paths, metas);
     merged.num_blocks = static_cast<int>(
-        CountMergedBlocks(context, fn, bind_data->input_paths));
+        CountMergedBlocks(context, bind_data->input_paths));
 
     // Preserve the input format. Mixed-format inputs would have failed
     // validation already (different shapes parse to different structs);
@@ -299,21 +294,6 @@ static unique_ptr<FunctionData> StackBandsBind(
     return std::move(bind_data);
 }
 
-static unique_ptr<FunctionData> RaquetStackBandsBind(
-        ClientContext &context, TableFunctionBindInput &input,
-        vector<LogicalType> &return_types, vector<Identifier> &names) {
-    return StackBandsBind(context, input, return_types, names, "raquet_stack_bands");
-}
-
-// raquet_merge_bands: the original name, kept as a deprecated alias
-static unique_ptr<FunctionData> RaquetMergeBandsBind(
-        ClientContext &context, TableFunctionBindInput &input,
-        vector<LogicalType> &return_types, vector<Identifier> &names) {
-    DUCKDB_LOG_WARNING(context, "raquet_merge_bands is deprecated and will be removed in a future release; "
-                                "use raquet_stack_bands, which takes the same arguments.");
-    return StackBandsBind(context, input, return_types, names, "raquet_merge_bands");
-}
-
 // ─────────────────────────────────────────────
 // InitGlobal: open an internal Connection and submit the join SQL.
 // `Connection::Query` returns a MaterializedQueryResult — the entire
@@ -322,16 +302,16 @@ static unique_ptr<FunctionData> RaquetMergeBandsBind(
 // pattern exists to dodge the parquet writer's row-group buffering, not
 // the join's working set).
 // ─────────────────────────────────────────────
-static unique_ptr<GlobalTableFunctionState> RaquetMergeBandsInitGlobal(
+static unique_ptr<GlobalTableFunctionState> RaquetStackBandsInitGlobal(
         ClientContext &context, TableFunctionInitInput &input) {
-    auto &bind = input.bind_data->Cast<RaquetMergeBandsBindData>();
-    auto state = make_uniq<RaquetMergeBandsGlobalState>();
+    auto &bind = input.bind_data->Cast<RaquetStackBandsBindData>();
+    auto state = make_uniq<RaquetStackBandsGlobalState>();
 
     state->connection = std::unique_ptr<Connection>(new Connection(*context.db));
     state->result = state->connection->Query(bind.join_sql);
     if (state->result->HasError()) {
         throw InvalidInputException(
-            "%s: data-join query failed: %s", bind.function_name,
+            "raquet_stack_bands: data-join query failed: %s",
             state->result->GetError());
     }
     return std::move(state);
@@ -341,10 +321,10 @@ static unique_ptr<GlobalTableFunctionState> RaquetMergeBandsInitGlobal(
 // Execute: emit the metadata row first (block=0, metadata=merged JSON,
 // band_* = NULL), then drain the join result chunk by chunk.
 // ─────────────────────────────────────────────
-static void RaquetMergeBandsExecute(ClientContext &context, TableFunctionInput &input,
+static void RaquetStackBandsExecute(ClientContext &context, TableFunctionInput &input,
                                      DataChunk &output) {
-    auto &bind = input.bind_data->Cast<RaquetMergeBandsBindData>();
-    auto &state = input.global_state->Cast<RaquetMergeBandsGlobalState>();
+    auto &bind = input.bind_data->Cast<RaquetStackBandsBindData>();
+    auto &state = input.global_state->Cast<RaquetStackBandsGlobalState>();
 
     if (state.finished) {
         output.SetChildCardinality(0);
@@ -390,9 +370,9 @@ static void RaquetMergeBandsExecute(ClientContext &context, TableFunctionInput &
 // count; the FULL OUTER JOIN can return up to sum(rows[i]) when inputs
 // share few blocks, but most merges are produced from rasters with the
 // same spatial frame so input 0 is a reasonable lower bound.
-static unique_ptr<NodeStatistics> RaquetMergeBandsCardinality(
+static unique_ptr<NodeStatistics> RaquetStackBandsCardinality(
         ClientContext &context, const FunctionData *bind_data_p) {
-    auto &bind = bind_data_p->Cast<RaquetMergeBandsBindData>();
+    auto &bind = bind_data_p->Cast<RaquetStackBandsBindData>();
     if (bind.input_paths.empty()) {
         return make_uniq<NodeStatistics>();
     }
@@ -411,20 +391,15 @@ static unique_ptr<NodeStatistics> RaquetMergeBandsCardinality(
     return make_uniq<NodeStatistics>(static_cast<idx_t>(n + 1));
 }
 
-void RegisterMergeBandsFunction(ExtensionLoader &loader) {
+void RegisterStackBandsFunction(ExtensionLoader &loader) {
     TableFunction stack_fn(
         "raquet_stack_bands",
         {LogicalType::LIST(LogicalType::VARCHAR)},
-        RaquetMergeBandsExecute,
+        RaquetStackBandsExecute,
         RaquetStackBandsBind,
-        RaquetMergeBandsInitGlobal);
-    stack_fn.cardinality = RaquetMergeBandsCardinality;
+        RaquetStackBandsInitGlobal);
+    stack_fn.cardinality = RaquetStackBandsCardinality;
     loader.RegisterFunction(stack_fn);
-
-    TableFunction merge_fn = stack_fn;
-    merge_fn.name = "raquet_merge_bands";
-    merge_fn.bind = RaquetMergeBandsBind;
-    loader.RegisterFunction(merge_fn);
 }
 
 }  // namespace duckdb

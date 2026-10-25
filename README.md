@@ -292,8 +292,8 @@ COPY (
 
 ### raquet_stack_bands (Combine single-band raquets into a multi-band raquet)
 
-> Formerly `raquet_merge_bands`, which still works as a deprecated alias: same arguments and
-> output, but it logs a deprecation warning (an error under `SET GLOBAL warnings_as_errors = true`).
+> Formerly `raquet_merge_bands`, which has been removed: rename calls to `raquet_stack_bands`,
+> which takes the same arguments and returns the same output.
 > It stacks bands of the **same area**; it does not mosaic different areas.
 
 Joins a list of single-band raquet parquet files into one multi-band raquet, by `block`.

@@ -1,5 +1,5 @@
-# name: test/sql/merge_bands.test
-# description: raquet_merge_bands(LIST<VARCHAR>) — combine N single-band raquets
+# name: test/sql/stack_bands_read_raster.test
+# description: raquet_stack_bands(LIST<VARCHAR>) — combine N single-band raquets
 #              into a multi-band raquet. Covers happy path for both metadata
 #              formats (v0.1.0 flat / v0.5.0 nested tiling), the recompute of
 #              num_blocks, band renaming + source_band renumbering, and the
@@ -50,7 +50,7 @@ TO 'duckdb_unittest_tempdir/mb_v0_b.parquet' (FORMAT PARQUET);
 
 statement ok
 CREATE TABLE merged_v050 AS
-SELECT * FROM raquet_merge_bands([
+SELECT * FROM raquet_stack_bands([
   'duckdb_unittest_tempdir/mb_v050_a.parquet',
   'duckdb_unittest_tempdir/mb_v050_b.parquet',
   'duckdb_unittest_tempdir/mb_v050_c.parquet'
@@ -126,7 +126,7 @@ FROM merged_v050 WHERE block = 0
 
 statement ok
 CREATE TABLE merged_v0 AS
-SELECT * FROM raquet_merge_bands([
+SELECT * FROM raquet_stack_bands([
   'duckdb_unittest_tempdir/mb_v0_a.parquet',
   'duckdb_unittest_tempdir/mb_v0_b.parquet'
 ])
@@ -173,18 +173,18 @@ FROM merged_v0 WHERE block = 0
 
 # Empty list → InvalidInputException at bind time
 statement error
-SELECT * FROM raquet_merge_bands(CAST([] AS VARCHAR[]))
+SELECT * FROM raquet_stack_bands(CAST([] AS VARCHAR[]))
 ----
 input list is empty
 
 # NULL list → InvalidInputException
 statement error
-SELECT * FROM raquet_merge_bands(CAST(NULL AS VARCHAR[]))
+SELECT * FROM raquet_stack_bands(CAST(NULL AS VARCHAR[]))
 ----
 input list cannot be NULL
 
 # Multi-band input rejection: feed a previously-merged 2-band raquet back
-# into raquet_merge_bands. test_palette.tif has only one source band so
+# into raquet_stack_bands. test_palette.tif has only one source band so
 # we can't produce a multi-band raquet directly via `bands=` (which dedups
 # duplicate indices); instead we reuse the v050 merged output as input.
 statement ok
@@ -192,7 +192,7 @@ COPY merged_v050
 TO 'duckdb_unittest_tempdir/mb_multi.parquet' (FORMAT PARQUET);
 
 statement error
-SELECT * FROM raquet_merge_bands([
+SELECT * FROM raquet_stack_bands([
   'duckdb_unittest_tempdir/mb_multi.parquet',
   'duckdb_unittest_tempdir/mb_v050_a.parquet'
 ])
@@ -209,7 +209,7 @@ COPY (SELECT * FROM read_raster('test/data/test_palette.tif', bands='1', max_zoo
 TO 'duckdb_unittest_tempdir/mb_v050_diff_zoom.parquet' (FORMAT PARQUET);
 
 statement error
-SELECT * FROM raquet_merge_bands([
+SELECT * FROM raquet_stack_bands([
   'duckdb_unittest_tempdir/mb_v050_a.parquet',
   'duckdb_unittest_tempdir/mb_v050_diff_zoom.parquet'
 ])
