@@ -1,0 +1,36 @@
+# name: test/sql/stack_bands.test
+# description: raquet_stack_bands(LIST<VARCHAR>) output shape and errors, and
+#              the removal of its old name raquet_merge_bands. Uses the
+#              parquet fixture, so it runs without GDAL;
+#              stack_bands_read_raster.test covers the stacking itself.
+# group: [raquet]
+
+require raquet
+
+require parquet
+
+statement ok
+CREATE TABLE stacked AS
+SELECT * FROM raquet_stack_bands(['test/data/raquet_test.parquet', 'test/data/raquet_test.parquet']);
+
+# block, metadata, band_1, band_2
+query I
+SELECT count(*) FROM information_schema.columns WHERE table_name = 'stacked'
+----
+4
+
+query I
+SELECT count(*) FROM stacked WHERE block != 0 AND band_1 = band_2
+----
+2
+
+statement error
+SELECT * FROM raquet_stack_bands(CAST([] AS VARCHAR[]))
+----
+raquet_stack_bands: input list is empty
+
+# The old name was removed, not kept as an alias
+statement error
+SELECT * FROM raquet_merge_bands(['test/data/raquet_test.parquet'])
+----
+raquet_merge_bands does not exist

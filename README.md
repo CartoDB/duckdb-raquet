@@ -318,7 +318,7 @@ much sparser than others (e.g. one band has 0.5% valid pixels, another has 60%),
 to the meaningful bands with `bands=` to skip the heavy ones. For very large multi-band
 rasters that exceed available memory when converting all bands together, convert each
 band separately with `bands='1'`, `bands='2'`, ... then stitch the per-band raquets
-together with `raquet_merge_bands` (see below).
+together with `raquet_stack_bands` (see below).
 ```sql
 -- Convert only bands 2, 4, 5 (skip the all-nearly-empty bands 1, 3)
 COPY (
@@ -329,7 +329,11 @@ COPY (
 ) TO 'output.parquet' (FORMAT parquet);
 ```
 
-### raquet_merge_bands (Combine single-band raquets into a multi-band raquet)
+### raquet_stack_bands (Combine single-band raquets into a multi-band raquet)
+
+> Formerly `raquet_merge_bands`, which has been removed: rename calls to `raquet_stack_bands`,
+> which takes the same arguments and returns the same output.
+> It stacks bands of the **same area**; it does not mosaic different areas.
 
 Joins a list of single-band raquet parquet files into one multi-band raquet, by `block`.
 The output schema is dense `band_1..band_N` in the order the inputs are passed; the merged
@@ -337,7 +341,7 @@ metadata composes per-band stats/nodata from each input and renumbers `name` and
 `source_band` to match the output position.
 
 ```sql
-SELECT * FROM raquet_merge_bands(LIST<VARCHAR>)
+SELECT * FROM raquet_stack_bands(LIST<VARCHAR>)
 ```
 
 | Parameter | Type | Description |
@@ -368,18 +372,18 @@ COPY (SELECT * FROM read_raster('big.tif', bands='3', block_size=512))
 
 -- 2. Merge the per-band parquets (fast — pure metadata + parallel hash join)
 COPY (
-    SELECT * FROM raquet_merge_bands(['b1.parquet', 'b2.parquet', 'b3.parquet'])
+    SELECT * FROM raquet_stack_bands(['b1.parquet', 'b2.parquet', 'b3.parquet'])
 ) TO 'merged.parquet' (FORMAT parquet);
 
 -- 3. Drop a band, reorder, or pick a subset — just change the input list
 COPY (
-    SELECT * FROM raquet_merge_bands(['b2.parquet', 'b3.parquet'])
+    SELECT * FROM raquet_stack_bands(['b2.parquet', 'b3.parquet'])
 ) TO 'merged_no_b1.parquet' (FORMAT parquet);
 ```
 
 **Notes:**
 - `source_band` in the output metadata always equals the output position (`i+1`); the *original* source-band index from each input is overwritten on merge. If you need to preserve the original mapping, record it externally before merging.
-- `raquet_merge_bands` does not re-run sparsity filtering — the input rows are taken as-is. If an input contains tiles that are entirely nodata for that band, those tiles will appear in the merged output (with non-null BLOBs) unless filtering happened during the per-band `read_raster` step.
+- `raquet_stack_bands` does not re-run sparsity filtering — the input rows are taken as-is. If an input contains tiles that are entirely nodata for that band, those tiles will appear in the merged output (with non-null BLOBs) unless filtering happened during the per-band `read_raster` step.
 
 ### Validation
 

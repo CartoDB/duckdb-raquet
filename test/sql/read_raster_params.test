@@ -3,9 +3,9 @@
 #              had no direct test exercise. Each param is paired with either
 #              an observable metadata field (extracted via raquet_parse_metadata)
 #              or an error-path assertion.
-#              Already-covered elsewhere: bands (merge_bands.test),
+#              Already-covered elsewhere: bands (stack_bands_read_raster.test),
 #              format / approx (read_raster_metadata.test), max_zoom
-#              (merge_bands.test). This file covers the rest:
+#              (stack_bands_read_raster.test). This file covers the rest:
 #              compression, band_layout, block_size, min_zoom,
 #              overviews, quality, statistics, zoom_strategy,
 #              resampling, sparsity_probe, sparsity_probe_size.
