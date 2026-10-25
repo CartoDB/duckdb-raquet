@@ -1,0 +1,64 @@
+# name: test/sql/stack_bands.test
+# description: raquet_stack_bands(LIST<VARCHAR>) and its deprecated alias
+#              raquet_merge_bands: same output, errors name the function as
+#              called, and the alias logs a deprecation warning (an error
+#              under warnings_as_errors). Uses the parquet fixture, so it
+#              runs without GDAL; merge_bands.test covers the stacking itself.
+# group: [raquet]
+
+require raquet
+
+require parquet
+
+statement ok
+CREATE TABLE stacked AS
+SELECT * FROM raquet_stack_bands(['test/data/raquet_test.parquet', 'test/data/raquet_test.parquet']);
+
+# block, metadata, band_1, band_2
+query I
+SELECT count(*) FROM information_schema.columns WHERE table_name = 'stacked'
+----
+4
+
+query I
+SELECT count(*) FROM stacked WHERE block != 0 AND band_1 = band_2
+----
+2
+
+# The deprecated alias returns the same rows
+query I
+SELECT count(*) FROM (
+    (SELECT * FROM stacked EXCEPT ALL
+     SELECT * FROM raquet_merge_bands(['test/data/raquet_test.parquet', 'test/data/raquet_test.parquet']))
+    UNION ALL
+    (SELECT * FROM raquet_merge_bands(['test/data/raquet_test.parquet', 'test/data/raquet_test.parquet'])
+     EXCEPT ALL SELECT * FROM stacked)
+)
+----
+0
+
+# Errors name the function as called
+statement error
+SELECT * FROM raquet_stack_bands(CAST([] AS VARCHAR[]))
+----
+raquet_stack_bands: input list is empty
+
+statement error
+SELECT * FROM raquet_merge_bands(CAST([] AS VARCHAR[]))
+----
+raquet_merge_bands: input list is empty
+
+# The alias warns; under warnings_as_errors the warning is an error
+statement ok
+SET GLOBAL warnings_as_errors = true
+
+statement error
+SELECT count(*) FROM raquet_merge_bands(['test/data/raquet_test.parquet'])
+----
+raquet_merge_bands is deprecated
+
+statement ok
+SELECT count(*) FROM raquet_stack_bands(['test/data/raquet_test.parquet'])
+
+statement ok
+SET GLOBAL warnings_as_errors = false
