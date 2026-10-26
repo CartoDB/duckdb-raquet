@@ -1268,6 +1268,30 @@ static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
     bind_data->raquet_dtype = GDALTypeToRaquetType(bind_data->gdal_dtype);
     bind_data->dtype_bytes = GDALTypeSize(bind_data->gdal_dtype);
 
+    // JPEG/WebP encode 8-bit pixels with a fixed channel count; reject other
+    // inputs here instead of failing in a worker mid-conversion.
+    const auto &compression = bind_data->compression;
+    if (compression == "jpeg" || compression == "webp") {
+        const bool is_jpeg = compression == "jpeg";
+        const char *codec = is_jpeg ? "JPEG" : "WebP";
+        const int out_band_count = static_cast<int>(bind_data->selected_bands.size());
+        if (bind_data->gdal_dtype != GDT_Byte) {
+            GDALClose(ds);
+            throw InvalidInputException(
+                "%s compression requires uint8 bands, got %s; use compression='gzip' or 'none'",
+                codec, bind_data->raquet_dtype);
+        }
+        const bool ok = is_jpeg ? (out_band_count == 1 || out_band_count == 3)
+                                : (out_band_count == 3 || out_band_count == 4);
+        if (!ok) {
+            GDALClose(ds);
+            throw InvalidInputException(
+                "%s compression requires %s bands, got %d; pick bands with the bands parameter "
+                "or use compression='gzip' or 'none'",
+                codec, is_jpeg ? "1 or 3" : "3 or 4", out_band_count);
+        }
+    }
+
     // Per-band metadata, indexed by output position (0-based dense). Each
     // entry pulls from the source band at selected_bands[idx]. After this
     // loop, all the band_* vectors have selected_bands.size() entries and

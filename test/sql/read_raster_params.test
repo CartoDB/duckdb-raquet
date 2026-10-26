@@ -54,6 +54,24 @@ SELECT count(*) FROM read_raster('test/data/test_palette.tif',
 ----
 requires interleaved band layout
 
+# JPEG/WebP band count and dtype are checked at bind (#50). test_palette.tif
+# has 1 uint8 band; float_no_nodata.tif is float32. When the codec isn't
+# compiled in, bind fails earlier with "not available", so match only the
+# common prefix.
+statement error
+SELECT count(*) FROM read_raster('test/data/test_palette.tif',
+                                  compression='webp', band_layout='interleaved',
+                                  overviews='none')
+----
+WebP
+
+statement error
+SELECT count(*) FROM read_raster('test/data/float_no_nodata.tif',
+                                  compression='jpeg', band_layout='interleaved',
+                                  overviews='none')
+----
+JPEG
+
 # ---------- band_layout -----------------------------------------------------
 # Interleaved layout surfaces in v0.5.0 metadata.
 query I
