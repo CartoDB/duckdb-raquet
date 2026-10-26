@@ -158,6 +158,28 @@ SELECT (raquet_validate_metadata('{
 false	true
 
 # =============================================================================
+# compression: null (how writers serialize uncompressed data) → "none", no warning
+# =============================================================================
+
+query II
+SELECT (raquet_parse_metadata('{
+  "file_format":"raquet",
+  "compression":null,
+  "tiling":{"scheme":"quadbin","min_zoom":0,"max_zoom":3,"block_width":256,"block_height":256},
+  "crs":"EPSG:3857",
+  "bands":[{"name":"band_1","type":"uint8"}]
+}')).compression,
+       len((raquet_validate_metadata('{
+  "file_format":"raquet",
+  "compression":null,
+  "tiling":{"scheme":"quadbin","min_zoom":0,"max_zoom":3,"block_width":256,"block_height":256},
+  "crs":"EPSG:3857",
+  "bands":[{"name":"band_1","type":"uint8"}]
+}')).warnings);
+----
+none	0
+
+# =============================================================================
 # Unknown compression → warning (not an error)
 # =============================================================================
 

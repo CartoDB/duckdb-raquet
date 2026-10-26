@@ -927,7 +927,8 @@ inline RaquetMetadata parse_metadata(const std::string &json) {
     meta.file_format = extract_json_string(json, "file_format");
 
     meta.compression = extract_json_string(json, "compression");
-    if (meta.compression.empty()) meta.compression = "none";
+    // Writers serialize uncompressed data as JSON null, which comes back as "null"
+    if (meta.compression.empty() || meta.compression == "null") meta.compression = "none";
 
     // New in v0.4.0: compression quality for JPEG/WebP
     meta.compression_quality = extract_json_int(json, "compression_quality", 0);
