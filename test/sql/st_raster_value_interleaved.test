@@ -1,0 +1,45 @@
+# name: test/sql/st_raster_value_interleaved.test
+# description: ST_RasterValue on interleaved tiles written with
+#              compression='none', whose metadata stores "compression": null
+#              (#49). Values must match the default (sequential) tiles of the same file.
+# group: [raquet]
+
+require raquet
+
+require parquet
+
+# read_raster() is only compiled in with GDAL (RAQUET_HAS_GDAL); CI builds
+# without it. Run locally with RAQUET_TEST_GDAL=1 against a GDAL build.
+require-env RAQUET_TEST_GDAL
+
+statement ok
+CREATE TABLE interleaved_none AS
+SELECT * FROM read_raster('test/data/test_palette.tif',
+                          band_layout='interleaved', compression='none', overviews='none');
+
+statement ok
+CREATE TABLE sequential AS
+SELECT * FROM read_raster('test/data/test_palette.tif', overviews='none');
+
+# Sample every pixel center of the 16x16 source (bounds 13.000..13.016,
+# 52.484..52.500, 0.001° pixels). Tile centers fall outside this small raster
+# and return NULL on both sides, so they can't be used. 64 pixels are nodata;
+# the rest hold 3 classes.
+query III
+SELECT count(v), count(DISTINCT v), bool_and(v IS NOT DISTINCT FROM ref)
+FROM (
+    SELECT ST_RasterValue(d.block, d.pixels, p.pt, m.metadata) AS v,
+           ST_RasterValue(g.block, g.band_1, p.pt, gm.metadata) AS ref
+    FROM (SELECT 13.0005 + i * 0.001 AS lon, 52.4845 + j * 0.001 AS lat
+          FROM range(16) a(i), range(16) b(j)) s,
+         interleaved_none d,
+         (SELECT metadata FROM interleaved_none WHERE block = 0) m,
+         sequential g,
+         (SELECT metadata FROM sequential WHERE block = 0) gm,
+         LATERAL (SELECT ST_Point(s.lon, s.lat) AS pt) p
+    WHERE d.block != 0
+      AND d.block = quadbin_from_lonlat(s.lon, s.lat, quadbin_resolution(d.block))
+      AND g.block = d.block
+);
+----
+192	3	true

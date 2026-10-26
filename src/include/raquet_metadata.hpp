@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -523,8 +524,8 @@ inline std::string extract_json_string(const std::string &json, const std::strin
     }
     pos += search.length();
 
-    // Skip whitespace
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) {
+    // Skip whitespace (pretty-printed JSON can put the value on the next line)
+    while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos]))) {
         pos++;
     }
 
@@ -544,7 +545,7 @@ inline std::string extract_json_string(const std::string &json, const std::strin
         }
         std::string val = json.substr(pos, end - pos);
         // Trim whitespace
-        while (!val.empty() && (val.back() == ' ' || val.back() == '\t')) {
+        while (!val.empty() && std::isspace(static_cast<unsigned char>(val.back()))) {
             val.pop_back();
         }
         return val;
@@ -927,7 +928,8 @@ inline RaquetMetadata parse_metadata(const std::string &json) {
     meta.file_format = extract_json_string(json, "file_format");
 
     meta.compression = extract_json_string(json, "compression");
-    if (meta.compression.empty()) meta.compression = "none";
+    // Writers serialize uncompressed data as JSON null, which comes back as "null"
+    if (meta.compression.empty() || meta.compression == "null") meta.compression = "none";
 
     // New in v0.4.0: compression quality for JPEG/WebP
     meta.compression_quality = extract_json_int(json, "compression_quality", 0);
