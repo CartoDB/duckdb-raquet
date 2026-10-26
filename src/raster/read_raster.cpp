@@ -1263,24 +1263,32 @@ static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
         bind_data->selected_bands = std::move(dedup);
     }
 
-    GDALRasterBandH first_band = GDALGetRasterBand(ds, 1);
-    bind_data->gdal_dtype = GDALGetRasterDataType(first_band);
+    // All output bands share one dtype: the smallest type that holds every
+    // selected band, so mixed selections widen instead of truncating.
+    // JPEG/WebP encode 8-bit pixels only, so there every band must be uint8.
+    const auto &compression = bind_data->compression;
+    const bool lossy_codec = compression == "jpeg" || compression == "webp";
+    const char *codec = compression == "jpeg" ? "JPEG" : "WebP";
+    GDALDataType out_dtype = GDT_Unknown;
+    for (int b : bind_data->selected_bands) {
+        GDALDataType band_dtype = GDALGetRasterDataType(GDALGetRasterBand(ds, b));
+        if (lossy_codec && band_dtype != GDT_Byte) {
+            GDALClose(ds);
+            throw InvalidInputException(
+                "%s compression requires uint8 bands, got %s in band %d; use compression='gzip' or 'none'",
+                codec, GDALGetDataTypeName(band_dtype), b);
+        }
+        out_dtype = out_dtype == GDT_Unknown ? band_dtype : GDALDataTypeUnion(out_dtype, band_dtype);
+    }
+    bind_data->gdal_dtype = out_dtype;
     bind_data->raquet_dtype = GDALTypeToRaquetType(bind_data->gdal_dtype);
     bind_data->dtype_bytes = GDALTypeSize(bind_data->gdal_dtype);
 
-    // JPEG/WebP encode 8-bit pixels with a fixed channel count; reject other
-    // inputs here instead of failing in a worker mid-conversion.
-    const auto &compression = bind_data->compression;
-    if (compression == "jpeg" || compression == "webp") {
+    // JPEG/WebP also take a fixed channel count; reject other inputs here
+    // instead of failing in a worker mid-conversion.
+    if (lossy_codec) {
         const bool is_jpeg = compression == "jpeg";
-        const char *codec = is_jpeg ? "JPEG" : "WebP";
         const int out_band_count = static_cast<int>(bind_data->selected_bands.size());
-        if (bind_data->gdal_dtype != GDT_Byte) {
-            GDALClose(ds);
-            throw InvalidInputException(
-                "%s compression requires uint8 bands, got %s; use compression='gzip' or 'none'",
-                codec, bind_data->raquet_dtype);
-        }
         const bool ok = is_jpeg ? (out_band_count == 1 || out_band_count == 3)
                                 : (out_band_count == 3 || out_band_count == 4);
         if (!ok) {
@@ -1498,7 +1506,7 @@ static unique_ptr<FunctionData> ReadRasterBind(ClientContext &context,
     OSRSetAxisMappingStrategy(src_srs, OAMS_TRADITIONAL_GIS_ORDER);
 
     // Detect well-known CRS to enable PROJ-free fast path
-    bind_data->overview_count = GDALGetOverviewCount(first_band);
+    bind_data->overview_count = GDALGetOverviewCount(GDALGetRasterBand(ds, bind_data->selected_bands[0]));
     if (!src_is_wgs84) {
         // Check via EPSG authority code
         const char *auth_name = OSRGetAuthorityName(src_srs, nullptr);

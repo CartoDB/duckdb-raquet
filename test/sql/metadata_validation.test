@@ -179,6 +179,25 @@ SELECT (raquet_parse_metadata('{
 ----
 none	0
 
+# Pretty-printed JSON: null as the last key is followed by a newline, and the
+# value can start on the line after the colon
+query II
+SELECT (raquet_parse_metadata('{
+  "file_format": "raquet",
+  "tiling": {"scheme": "quadbin", "min_zoom": 0, "max_zoom": 3, "block_width": 256, "block_height": 256},
+  "crs": "EPSG:3857",
+  "bands": [{"name": "band_1", "type": "uint8"}],
+  "compression": null
+}')).compression,
+       (raquet_parse_metadata('{
+  "file_format": "raquet",
+  "compression":
+    null,
+  "crs": "EPSG:3857"
+}')).compression;
+----
+none	none
+
 # =============================================================================
 # Unknown compression → warning (not an error)
 # =============================================================================
